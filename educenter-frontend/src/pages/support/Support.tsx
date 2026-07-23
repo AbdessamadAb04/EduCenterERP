@@ -10,8 +10,6 @@ import {
   ShieldCheck,
   Video
 } from 'lucide-react';
-import MetricCard from '../../components/common/MetricCard';
-
 const SupportPage: React.FC = () => {
   const supportCategories = [
     {

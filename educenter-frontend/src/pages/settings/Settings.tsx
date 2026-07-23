@@ -2,13 +2,15 @@ import React from 'react';
 import { 
   User, 
   Bell, 
-  Lock, 
   Database, 
   Globe, 
   Palette,
-  ShieldCheck,
-  Smartphone
+  Building2,
+  Calendar,
+  MapPin,
+  ArrowRight
 } from 'lucide-react';
+import StatusBadge from '../../components/common/StatusBadge';
 
 const SettingsPage: React.FC = () => {
   const settingsSections = [
@@ -99,6 +101,35 @@ const SettingsPage: React.FC = () => {
         ))}
       </div>
 
+      <div style={{
+        backgroundColor: 'var(--color-white)',
+        borderRadius: '12px',
+        border: '1px solid var(--color-border)',
+        boxShadow: 'var(--shadow-sm)',
+        padding: '24px',
+        marginTop: '32px'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '20px', paddingBottom: '12px', borderBottom: '1px solid var(--color-gray-bg)' }}>
+          <div style={{
+            backgroundColor: 'var(--color-primary-light)',
+            color: 'var(--color-primary)',
+            padding: '8px',
+            borderRadius: '8px'
+          }}>
+            <Building2 size={20} />
+          </div>
+          <h3 style={{ fontSize: 'var(--text-lg)', fontWeight: 600 }}>Informations du système</h3>
+        </div>
+
+        <div style={{ display: 'grid', gap: '8px', fontSize: 'var(--text-sm)' }}>
+          <MetaRow label="Version" value="EduCenter v0.1" icon={<Building2 size={14} />} />
+          <MetaRow label="Environnement" value={<StatusBadge status="ACTIVE" />} icon={<Calendar size={14} />} />
+          <MetaRow label="Langue" value="Français" icon={<Globe size={14} />} />
+          <MetaRow label="Fuseau horaire" value="Africa/Casablanca (GMT+1)" icon={<MapPin size={14} />} />
+          <MetaRow label="Dernière mise à jour" value="29 mai 2026" icon={<ArrowRight size={14} />} last />
+        </div>
+      </div>
+
       <div style={{ 
         marginTop: '32px', 
         padding: '24px', 
@@ -128,5 +159,17 @@ const SettingsPage: React.FC = () => {
     </div>
   );
 };
+
+function MetaRow({ label, value, icon, last = false }: { label: string; value: React.ReactNode; icon: React.ReactNode; last?: boolean }) {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'space-between', gap: '16px', alignItems: 'center', padding: '8px 0', borderBottom: last ? 'none' : '1px solid var(--color-border)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--color-text-secondary)' }}>
+        {icon}
+        <span>{label}</span>
+      </div>
+      <div style={{ color: 'var(--color-text)', textAlign: 'right' }}>{value}</div>
+    </div>
+  );
+}
 
 export default SettingsPage;

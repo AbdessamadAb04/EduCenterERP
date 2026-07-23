@@ -163,6 +163,22 @@ ul {
   list-style: none;
 }
 
+/* Hide browser native password reveal icons (Edge, Chrome, etc.) */
+input[type="password"]::-ms-reveal,
+input[type="password"]::-ms-clear {
+  display: none;
+}
+
+input[type="password"]::-webkit-credentials-auto-fill-button,
+input[type="password"]::-webkit-textfield-decoration-container {
+  display: none !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+  position: absolute !important;
+  right: 0 !important;
+  opacity: 0 !important;
+}
+
 
 #root {
   width: 100%;
@@ -219,4 +235,8 @@ code {
   line-height: 135%;
   padding: 4px 8px;
   background: var(--code-bg);
+}
+
+.month-scroll-container::-webkit-scrollbar {
+  display: none;
 }

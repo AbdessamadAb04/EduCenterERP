@@ -1,26 +1,17 @@
 import React, { useState } from 'react';
-import { User, Edit2, Trash2, Printer, Archive, CheckSquare, Square, Download } from 'lucide-react';
+import { User, Edit2, Printer, Archive, Download } from 'lucide-react';
 import StatusBadge from '../../components/common/StatusBadge';
 import Modal from '../../components/common/Modal';
 import PrimaryButton from '../../components/common/PrimaryButton';
+import EmptyDataOverlay from '../../components/common/EmptyDataOverlay';
 import { StudentExportPDF } from '../../components/finance/StudentExportPDF';
 import { downloadPDF } from '../../utils/exporterUtils';
 
-export type StudentStatus = 'ACTIVE' | 'ON_HOLD' | 'DROPPED' | 'PAID' | 'PENDING' | 'OVERDUE';
-
-export interface Student {
-  id: number;
-  name: string;
-  phone: string;
-  class: string;
-  enrollmentDate: string;
-  status: string; // Keep as string to avoid strict assignment issues from initialData, but cast where needed
-}
-
 interface StudentsByClassProps {
-  students: any[]; // Use any[] temporarily to resolve the assignment error from StudentsList.tsx
+  students: any[];
   onEdit: (student: any) => void;
-  onArchive: (id: number | number[]) => void;
+  onArchive: (id: string | string[]) => void;
+  classes?: any[];
 }
 
 const StudentsByClass: React.FC<StudentsByClassProps> = ({ students, onEdit, onArchive }) => {
@@ -34,9 +25,8 @@ const StudentsByClass: React.FC<StudentsByClassProps> = ({ students, onEdit, onA
     });
   };
 
-  // Group students by class
   const groupedStudents = (students || []).reduce((acc, student) => {
-    const className = student.class || 'Sans classe';
+    const className = student.class_name || student.class || 'Sans classe';
     if (!acc[className]) {
       acc[className] = [];
     }
@@ -47,7 +37,8 @@ const StudentsByClass: React.FC<StudentsByClassProps> = ({ students, onEdit, onA
   const classes = Object.keys(groupedStudents).sort();
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', position: 'relative' }}>
+      {classes.length === 0 && <EmptyDataOverlay topOffset="48px" />}
       {classes.map((className) => {
         const classStudents = groupedStudents[className] || [];
 
@@ -146,7 +137,7 @@ const StudentsByClass: React.FC<StudentsByClassProps> = ({ students, onEdit, onA
                       }}>
                         <User size={16} />
                       </div>
-                      <span style={{ fontWeight: 500, color: 'var(--color-text)' }}>{student.name}</span>
+                      <span style={{ fontWeight: 500, color: 'var(--color-text)' }}>{student.full_name || student.name}</span>
                     </div>
 
                 {/* Téléphone */}
@@ -164,13 +155,13 @@ const StudentsByClass: React.FC<StudentsByClassProps> = ({ students, onEdit, onA
                     fontSize: '12px',
                     fontWeight: 600
                   }}>
-                    {student.class}
+                    {student.class_name || student.class}
                   </span>
                 </div>
 
                 {/* Date d'inscription */}
                 <div style={{ flex: 1.5, color: 'var(--color-text-secondary)' }}>
-                  {student.enrollmentDate}
+                  {student.enrollment_date || student.enrollmentDate}
                 </div>
 
                 {/* Statut */}
@@ -248,12 +239,6 @@ const StudentsByClass: React.FC<StudentsByClassProps> = ({ students, onEdit, onA
           </div>
         }
       >
-        <div style={{ marginBottom: '16px' }}>
-          <h4 style={{ margin: 0, fontSize: 'var(--text-sm)', color: 'var(--color-text-secondary)', fontWeight: 600 }}>
-            Liste des étudiants ({exportModalConfig.students.length}) - {exportModalConfig.className}
-          </h4>
-        </div>
-
         <div style={{
           display: 'flex',
           flexDirection: 'column',
@@ -278,16 +263,21 @@ const StudentsByClass: React.FC<StudentsByClassProps> = ({ students, onEdit, onA
             {/* Document Header */}
             <div style={{ borderBottom: '2px solid var(--color-primary)', paddingBottom: '16px', marginBottom: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
               <div>
-                <h2 style={{ color: 'var(--color-primary)', margin: 0, fontSize: '24px', fontWeight: 800 }}>CENTRE CASABLANCA</h2>
-                <p style={{ margin: '4px 0', fontSize: '12px', color: 'var(--color-text-secondary)' }}>Apprentissage & Excellence</p>
+                <h2 style={{ color: 'var(--color-primary)', margin: 0, fontSize: '24px', fontWeight: 800 }}>EDUCENTER</h2>
+                <p style={{ margin: '4px 0', fontSize: '12px', color: 'var(--color-text-secondary)' }}>Gestion Scolaire</p>
               </div>
               <div style={{ textAlign: 'right' }}>
                 <div style={{ color: 'var(--color-text)', fontSize: '14px', fontWeight: 800 }}>
                   LISTE DES ÉTUDIANTS
                 </div>
                 <p style={{ marginTop: '4px', fontSize: '11px', fontWeight: 600 }}>Classe: {exportModalConfig.className}</p>
-                <p style={{ marginTop: '4px', fontSize: '11px', fontWeight: 600 }}>Année Scolaire: 2025/2026</p>
               </div>
+            </div>
+
+            <div style={{ marginBottom: '18px', textAlign: 'center' }}>
+              <h3 style={{ margin: 0, fontSize: '16px', color: '#000000', fontWeight: 600 }}>
+                Liste des étudiants en {exportModalConfig.className}
+              </h3>
             </div>
 
             {/* Students Table */}
@@ -296,7 +286,6 @@ const StudentsByClass: React.FC<StudentsByClassProps> = ({ students, onEdit, onA
                 <tr style={{ borderBottom: '1px solid var(--color-border)' }}>
                   <th style={{ textAlign: 'left', padding: '12px 8px', fontSize: '11px', color: 'var(--color-gray)', textTransform: 'uppercase', width: '40px' }}>#</th>
                   <th style={{ textAlign: 'left', padding: '12px 8px', fontSize: '11px', color: 'var(--color-gray)', textTransform: 'uppercase' }}>Nom Complet</th>
-                  <th style={{ textAlign: 'right', padding: '12px 8px', fontSize: '11px', color: 'var(--color-gray)', textTransform: 'uppercase' }}>Téléphone</th>
                 </tr>
               </thead>
               <tbody>
@@ -304,7 +293,6 @@ const StudentsByClass: React.FC<StudentsByClassProps> = ({ students, onEdit, onA
                   <tr key={student.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
                     <td style={{ padding: '12px 8px', fontSize: '12px', color: 'var(--color-text-secondary)' }}>{index + 1}</td>
                     <td style={{ padding: '12px 8px', fontSize: '12px', fontWeight: 600 }}>{student.name}</td>
-                    <td style={{ textAlign: 'right', padding: '12px 8px', fontSize: '12px' }}>{student.phone}</td>
                   </tr>
                 ))}
               </tbody>

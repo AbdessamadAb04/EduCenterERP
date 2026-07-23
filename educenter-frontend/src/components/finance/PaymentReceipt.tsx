@@ -221,21 +221,21 @@ const formatCurrency = (val: number) => {
 
 // --- PDF DOCUMENT ---
 export const PaymentReceipt: React.FC<PaymentReceiptProps> = ({
-  centerName = "Centre Casablanca",
-  centerAddress = "23 Rue Ibn Batouta, Maarif, Casablanca",
-  centerPhone = "0522 48 XX XX",
-  centerEmail = "contact@centrecasablanca.ma",
-  receiptNumber = "REC-2026-0042",
-  receiptDate = "04 avril 2026",
-  studentName = "Karim Idrissi",
-  studentPhone = "0661 23 45 67",
-  className = "Anglais B2 Soir",
-  subject = "Anglais",
-  amount = 600,
-  paymentMethod = "Espèces",
-  paymentDate = "28 mars 2026",
-  dueDate = "01 avril 2026",
-  periodLabel = "Mensualité Mars 2026",
+  centerName = "EDUCENTER",
+  centerAddress = "",
+  centerPhone = "",
+  centerEmail = "",
+  receiptNumber = "",
+  receiptDate = "",
+  studentName = "",
+  studentPhone = "",
+  className = "",
+  subject = "",
+  amount = 0,
+  paymentMethod = "",
+  paymentDate = "",
+  dueDate = "",
+  periodLabel = "",
   notes = ""
 }) => (
   <Document>

@@ -24,6 +24,9 @@ export interface ClassExportProps {
     teacher: string;
     capacity: string;
     status: string;
+    tarifAmount?: number;
+    tarifPeriod?: string;
+    tarifCustomLabel?: string;
   }[];
   title?: string;
 }
@@ -93,12 +96,13 @@ const styles = StyleSheet.create({
     padding: 5,
   },
   colId: { width: '8%', textAlign: 'center' },
-  colName: { width: '25%' },
-  colSubject: { width: '15%' },
+  colName: { width: '22%' },
+  colSubject: { width: '13%' },
   colLevel: { width: '10%' },
-  colSchedule: { width: '15%' },
-  colTeacher: { width: '15%' },
-  colCapacity: { width: '12%' },
+  colSchedule: { width: '13%' },
+  colTeacher: { width: '13%' },
+  colCapacity: { width: '10%' },
+  colFee: { width: '11%' },
 });
 
 export const ClassExportPDF: React.FC<ClassExportProps> = ({ classes, title = "Liste des Classes" }) => {
@@ -128,6 +132,7 @@ export const ClassExportPDF: React.FC<ClassExportProps> = ({ classes, title = "L
             <Text style={[styles.tableCellHeader, styles.colSchedule]}>Horaire</Text>
             <Text style={[styles.tableCellHeader, styles.colTeacher]}>Professeur</Text>
             <Text style={[styles.tableCellHeader, styles.colCapacity]}>Capacité</Text>
+            <Text style={[styles.tableCellHeader, styles.colFee]}>Tarif</Text>
           </View>
 
           {/* Table Rows */}
@@ -140,6 +145,7 @@ export const ClassExportPDF: React.FC<ClassExportProps> = ({ classes, title = "L
               <Text style={[styles.tableCell, styles.colSchedule]}>{classe.schedule}</Text>
               <Text style={[styles.tableCell, styles.colTeacher]}>{classe.teacher}</Text>
               <Text style={[styles.tableCell, styles.colCapacity]}>{classe.capacity}</Text>
+              <Text style={[styles.tableCell, styles.colFee]}>{classe.tarifAmount ?? 0} MAD / {classe.tarifPeriod === 'custom' ? (classe.tarifCustomLabel || 'Personnalisé') : (classe.tarifPeriod || 'mensuel')}</Text>
             </View>
           ))}
         </View>

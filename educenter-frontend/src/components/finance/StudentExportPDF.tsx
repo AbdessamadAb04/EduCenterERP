@@ -18,10 +18,6 @@ export interface StudentExportProps {
   students: {
     id: number;
     name: string;
-    phone: string;
-    class: string;
-    enrollmentDate: string;
-    status: string;
   }[];
   title?: string;
   isAbsenceList?: boolean;
@@ -93,9 +89,6 @@ const styles = StyleSheet.create({
   },
   colId: { width: '8%', textAlign: 'center' },
   colName: { width: '30%' },
-  colPhone: { width: '15%' },
-  colClass: { width: '20%' },
-  colStatus: { width: '12%' },
   colAbsence: { width: '25%', textAlign: 'center' }, // For absence list
   absenceBox: {
     width: 15,
@@ -144,20 +137,14 @@ export const StudentExportPDF: React.FC<StudentExportProps> = ({ students, title
                 <Text style={[styles.tableCellHeader, styles.colAbsence]}>Émargement (Présence)</Text>
                 <Text style={[styles.tableCellHeader, styles.colAbsence]}>Observations</Text>
               </>
-            ) : (
-              <>
-                <Text style={[styles.tableCellHeader, styles.colPhone]}>Téléphone</Text>
-                <Text style={[styles.tableCellHeader, styles.colClass]}>Classe</Text>
-                <Text style={[styles.tableCellHeader, styles.colStatus]}>Statut</Text>
-              </>
-            )}
+            ) : null}
           </View>
 
           {/* Table Body */}
           {students.map((student, index) => (
             <View key={student.id} style={styles.tableRow}>
               <Text style={[styles.tableCell, styles.colId]}>{index + 1}</Text>
-              <Text style={[styles.tableCell, styles.colName]}>{student.name}</Text>
+              <Text style={[styles.tableCell, styles.colName]}>{student.full_name || student.name}</Text>
               {isAbsenceList ? (
                 <>
                   <View style={styles.colAbsence}>
@@ -165,13 +152,7 @@ export const StudentExportPDF: React.FC<StudentExportProps> = ({ students, title
                   </View>
                   <Text style={[styles.tableCell, styles.colAbsence]}>-</Text>
                 </>
-              ) : (
-                <>
-                  <Text style={[styles.tableCell, styles.colPhone]}>{student.phone}</Text>
-                  <Text style={[styles.tableCell, styles.colClass]}>{student.class}</Text>
-                  <Text style={[styles.tableCell, styles.colStatus]}>{student.status}</Text>
-                </>
-              )}
+              ) : null}
             </View>
           ))}
         </View>
