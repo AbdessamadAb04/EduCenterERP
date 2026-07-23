@@ -29,6 +29,7 @@ export interface ScheduleExportProps {
   events: ScheduleEvent[];
   title?: string;
   academicYear?: string;
+  centerName?: string;
 }
 
 const styles = StyleSheet.create({
@@ -154,7 +155,8 @@ const DAYS = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dima
 export const ScheduleExportPDF: React.FC<ScheduleExportProps> = ({ 
   events, 
   title = "EMPLOI DU TEMPS",
-  academicYear = "Année Scolaire: 2025/2026"
+  academicYear = "",
+  centerName = ""
 }) => {
   return (
     <Document>
@@ -162,7 +164,7 @@ export const ScheduleExportPDF: React.FC<ScheduleExportProps> = ({
         {/* Header Section */}
         <View style={styles.header}>
           <View>
-            <Text style={styles.centerName}>EduSpace Casablanca</Text>
+            <Text style={styles.centerName}>{centerName}</Text>
             <Text style={styles.subtitle}>Système de Gestion Scolaire</Text>
           </View>
           <View style={styles.rightHeader}>

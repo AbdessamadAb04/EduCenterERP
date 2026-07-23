@@ -171,18 +171,17 @@ const formatCurrency = (val: number) => {
 
 export interface BulkReceiptsProps {
   payments: any[];
+  centerName?: string;
 }
 
-export const BulkPaymentReceiptsPDF: React.FC<BulkReceiptsProps> = ({ payments }) => (
+export const BulkPaymentReceiptsPDF: React.FC<BulkReceiptsProps> = ({ payments, centerName = "EDUCENTER" }) => (
   <Document>
     {payments.map((payment, index) => (
       <Page key={payment.id || index} size="A4" style={styles.page}>
         {/* Header */}
         <View style={styles.header}>
           <View style={styles.headerLeft}>
-            <Text style={styles.centerName}>Centre Casablanca</Text>
-            <Text style={styles.centerDetail}>23 Rue Ibn Batouta, Maarif, Casablanca</Text>
-            <Text style={styles.centerDetail}>0522 48 XX XX</Text>
+            <Text style={styles.centerName}>{centerName}</Text>
           </View>
           <View style={styles.headerRight}>
             <Text style={styles.receiptTitle}>REÇU DE PAIEMENT</Text>

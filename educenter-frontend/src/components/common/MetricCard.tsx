@@ -8,12 +8,13 @@ interface MetricCardProps {
   active?: boolean;
   onClick?: () => void;
   icon?: React.ReactNode;
+  solid?: boolean;
 }
 
-const MetricCard: React.FC<MetricCardProps> = ({ label, value, sub, color = 'default', active, onClick, icon }) => {
+const MetricCard: React.FC<MetricCardProps> = ({ label, value, sub, color = 'default', active, onClick, icon, solid }) => {
   const getBrandColor = () => {
     switch (color) {
-      case 'success': return '#10b981';
+      case 'success': return 'var(--color-primary)';
       case 'danger': return '#ef4444';
       case 'warning': return '#f59e0b';
       case 'info': return '#1d4ed8';
@@ -41,21 +42,21 @@ const MetricCard: React.FC<MetricCardProps> = ({ label, value, sub, color = 'def
     <div 
       onClick={onClick}
       style={{
-        backgroundColor: 'var(--color-white)',
+        backgroundColor: solid ? getBrandColor() : 'var(--color-white)',
         padding: '24px',
         borderRadius: '12px',
         boxShadow: active 
           ? `0 0 0 1px ${getBrandColor()}, var(--shadow-md)` 
-          : 'var(--shadow-sm)',
+          : solid ? `0 2px 8px ${getBrandColor()}33` : 'var(--shadow-sm)',
         width: '100%',
         display: 'flex',
         flexDirection: 'column',
         gap: '4px',
-        cursor: onClick ? 'pointer' : 'default', // Only show pointer if clickable
+        cursor: onClick ? 'pointer' : 'default',
         transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
         transform: 'none',
         opacity: active ? 1 : 0.9,
-        border: active ? `0.5px solid ${getBrandColor()}` : '1px solid var(--color-border)',
+        border: active ? `0.5px solid ${getBrandColor()}` : solid ? 'none' : '1px solid var(--color-border)',
         position: 'relative',
         overflow: 'hidden'
       }}
@@ -77,8 +78,8 @@ const MetricCard: React.FC<MetricCardProps> = ({ label, value, sub, color = 'def
           position: 'absolute',
           top: '20px',
           right: '20px',
-          color: getValueColor(),
-          opacity: 0.6,
+          color: solid ? '#fff' : active ? getBrandColor() : getValueColor(),
+          opacity: solid ? 0.4 : active ? 1 : 0.6,
           transition: 'all 0.3s ease'
         }}>
           {icon}
@@ -86,23 +87,25 @@ const MetricCard: React.FC<MetricCardProps> = ({ label, value, sub, color = 'def
       )}
       <span style={{ 
         fontSize: 'var(--text-sm)', 
-        color: 'var(--color-text-secondary)',
-        fontWeight: 500
+        color: solid ? '#fff' : 'var(--color-text-secondary)',
+        fontWeight: 500,
+        opacity: solid ? 0.85 : 1
       }}>
         {label}
       </span>
       <span style={{ 
         fontSize: 'var(--text-2xl)', 
         fontWeight: 'bold',
-        color: getValueColor()
+        color: solid ? '#fff' : getValueColor()
       }}>
         {value}
       </span>
       {sub && (
         <span style={{ 
           fontSize: 'var(--text-xs)', 
-          color: getSubColor(),
-          marginTop: '4px'
+          color: solid ? '#fff' : getSubColor(),
+          marginTop: '4px',
+          opacity: solid ? 0.75 : 1
         }}>
           {sub}
         </span>
