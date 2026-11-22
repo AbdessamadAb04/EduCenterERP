@@ -1,11 +1,12 @@
 {
   "info": {
-    "name": "EduCenterERP - Jalon 01",
-    "description": "Static gateway smoke and write checks for the Jalon 01 services.",
+    "name": "EduCenterERP - Jalon 02",
+    "description": "Eureka discovery, discovery-based gateway smoke and write checks for the Jalon 02 services.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
     { "key": "baseUrl", "value": "http://localhost:8080" },
+    { "key": "eurekaUrl", "value": "http://localhost:8761" },
     { "key": "etablissementId", "value": "1" },
     { "key": "classeId", "value": "1" },
     { "key": "studentId", "value": "1" },
@@ -13,6 +14,35 @@
     { "key": "email", "value": "demo@educenter.local" }
   ],
   "item": [
+    {
+      "name": "Discovery",
+      "item": [
+        {
+          "name": "Eureka applications",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Accept", "value": "application/json" }],
+            "url": "{{eurekaUrl}}/eureka/apps"
+          }
+        },
+        {
+          "name": "Gateway actuator health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/actuator/health"
+          }
+        },
+        {
+          "name": "Gateway actuator routes",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/actuator/gateway/routes"
+          }
+        }
+      ]
+    },
     {
       "name": "Smoke",
       "item": [

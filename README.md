@@ -9,8 +9,9 @@ The microservices work is applied progressively from Jalon 00 to Jalon 06. The d
 - `v0.0`: one Spring Boot backend, one H2 database, frontend calling `http://localhost:8080`.
 - `v0.1`: project presentation and target diagrams.
 - `v1.0`: Jalon 01 applied: 3 independent business services, 3 H2 databases and a static API Gateway on `:8080`.
+- `v2.0`: Jalon 02 applied: Eureka on `:8761` and discovery-based Gateway using `lb://` routes.
 
-The diagrams below describe the target architecture. Jalon 01 implements the static-Gateway subset; Eureka, Config Server, Feign and RabbitMQ remain later milestones.
+The diagrams below describe the target architecture. Jalon 02 implements Eureka, service registration and the single load-balanced entrypoint; Config Server, Feign and RabbitMQ remain later milestones.
 
 ## Business class diagram
 
@@ -104,10 +105,10 @@ Solid arrows are local ownership inside one service. Dashed arrows (`..>`) are c
 flowchart LR
     FE[React frontend] -->|HTTP :8080| GW[API Gateway :8080]
 
-    GW --> ES[etablissement-service :8081]
-    GW --> FS[formation-service :8082]
-    GW --> FINS[finance-service :8083]
-    GW --> NS[notification-service :8084]
+    GW -->|lb://ETABLISSEMENT-SERVICE| ES[etablissement-service :8081]
+    GW -->|lb://FORMATION-SERVICE| FS[formation-service :8082]
+    GW -->|lb://FINANCE-SERVICE| FINS[finance-service :8083]
+    GW -->|later: lb://NOTIFICATION-SERVICE| NS[notification-service :8084]
 
     ES --> EW[(H2 etablissement)]
     FS --> FW[(H2 formation)]
@@ -146,31 +147,35 @@ EduCenterERP/
     postman/EduCenterERP.postman_collection.json
   educenter-backend/
     common/                            Shared DTOs, validation, exception handler, OpenAPI config
+    eureka-server/                     Service registry - :8761
     etablissement-service/             Users, etablissements, memberships - :8081
     formation-service/                 Classes, sessions, students - :8082
     finance-service/                   Payments, dashboard - :8083
-    api-gateway/                       Static routes - :8080
+    api-gateway/                       Discovery-based routes - :8080
   educenter-frontend/                  React + TypeScript client
   README.md                            This file
 ```
 
-## Run Jalon 01
+## Run Jalon 02
 
 ```powershell
 $env:JAVA_HOME="C:\Program Files\Eclipse Adoptium\jdk-25.0.4.101-hotspot"
 .\mvnw.cmd clean install
 ```
 
-Start each service in a separate terminal from `educenter-backend/`:
+Start Eureka first, then the business services and the gateway. Run each command in a separate terminal from `educenter-backend/`:
 
 ```powershell
+.\mvnw.cmd -pl eureka-server spring-boot:run
 .\mvnw.cmd -pl etablissement-service spring-boot:run
 .\mvnw.cmd -pl formation-service spring-boot:run
 .\mvnw.cmd -pl finance-service spring-boot:run
 .\mvnw.cmd -pl api-gateway spring-boot:run
 ```
 
-Swagger UI is available at `http://localhost:8081/swagger-ui.html`, `:8082/swagger-ui.html` and `:8083/swagger-ui.html`.
+Eureka dashboard: `http://localhost:8761/`. Gateway actuator health: `http://localhost:8080/actuator/health`. Discovery-based routes: `http://localhost:8080/actuator/gateway/routes`. Swagger UI remains directly available at `http://localhost:8081/swagger-ui.html`, `:8082/swagger-ui.html` and `:8083/swagger-ui.html`.
+
+CORS is configured once in the gateway; business services no longer declare browser CORS rules. Gateway routes use Eureka service IDs (`lb://...`) instead of `localhost:808x`.
 
 PDF receipts require Python and `reportlab`: `python -m pip install -r educenter-backend/finance-service/scripts/requirements.txt`.
 
@@ -179,7 +184,7 @@ npm install
 npm run dev
 ```
 
-Frontend API base URL: `VITE_API_BASE_URL` (default `http://localhost:8080`). Import [`documentation/postman/EduCenterERP.postman_collection.json`](documentation/postman/EduCenterERP.postman_collection.json) for smoke and write checks.
+Frontend API base URL: `VITE_API_BASE_URL` (default `http://localhost:8080`). Import [`documentation/postman/EduCenterERP.postman_collection.json`](documentation/postman/EduCenterERP.postman_collection.json) for discovery, smoke and write checks.
 
 ## Jalon map
 
