@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Building2, ArrowLeft, Check,
@@ -7,8 +7,8 @@ import {
 import FormInput from '../../components/common/FormInput';
 import PrimaryButton from '../../components/common/PrimaryButton';
 import { useCenter } from '../../context/CenterContext';
-import { getFullName } from '../../utils/auth';
-import { supabase } from '../../lib/supabaseClient';
+import { getFullName, getUserId } from '../../utils/auth';
+import { etablissementsService } from '../../api/apiService';
 import TopBar from '../../components/common/TopBar';
 
 const centerTypeOptions = [
@@ -69,18 +69,7 @@ const NouvelEtablissement: React.FC = () => {
   const [errors, setErrors] = useState<FormErrors>({});
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [userName, setUserName] = useState(getFullName());
-
-  useEffect(() => {
-    const fetchUser = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.user) return;
-
-      const fromMeta = session.user.user_metadata?.full_name as string | undefined;
-      if (fromMeta) setUserName(fromMeta);
-    };
-    fetchUser();
-  }, []);
+  const [userName] = useState(() => getFullName());
   const validateField = (field: keyof FormState, value: string | number, currentForm: FormState): string | undefined => {
     const strVal = typeof value === 'string' ? value : String(value);
     const trimmed = strVal.trim();
@@ -117,7 +106,7 @@ const NouvelEtablissement: React.FC = () => {
         if (trimmed.length < 10) return 'L\'adresse doit contenir au moins 10 caractères';
         if (trimmed.length > 255) return 'L\'adresse ne doit pas dépasser 255 caractères';
         if (strVal !== trimmed) return 'L\'adresse ne peut pas commencer ou finir par un espace';
-        if (!/^[a-zA-Z0-9À-ÿ,.\/#\- ]+$/.test(trimmed)) return 'Caractères non autorisés dans l\'adresse';
+        if (!/^[a-zA-Z0-9À-ÿ,./#\- ]+$/.test(trimmed)) return 'Caractères non autorisés dans l\'adresse';
         return undefined;
       }
       case 'phone': {
@@ -243,28 +232,31 @@ const NouvelEtablissement: React.FC = () => {
       websiteVal = `https://${websiteVal}`;
     }
 
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session?.user) {
+    const userId = getUserId();
+    if (!userId) {
       setSubmitError('Session expirée. Veuillez vous reconnecter.');
       setSubmitting(false);
       return;
     }
 
-    const { data: etabId, error: rpcError } = await supabase.rpc('create_establishment', {
-      p_center_name: form.centerName.trim(),
-      p_center_type: form.centerType,
-      p_city: form.city.trim(),
-      p_address: form.address.trim(),
-      p_phone: form.phone.replace(/[\s-]/g, ''),
-      p_secondary_phone: form.secondaryPhone.replace(/[\s-]/g, '') || null,
-      p_email: form.email.trim().toLowerCase(),
-      p_website: websiteVal || null,
-      p_registration_fee: Number(form.registrationFee),
-      p_logo: form.logo || null,
-    });
-
-    if (rpcError || !etabId) {
-      setSubmitError(`Erreur lors de la création de l'établissement: ${rpcError?.message || 'réponse invalide'}`);
+    let etabId: string;
+    try {
+      const created = await etablissementsService.create({
+        center_name: form.centerName.trim(),
+        center_type: form.centerType,
+        city: form.city.trim(),
+        address: form.address.trim(),
+        phone: form.phone.replace(/[\s-]/g, ''),
+        secondary_phone: form.secondaryPhone.replace(/[\s-]/g, '') || null,
+        email: form.email.trim().toLowerCase(),
+        website: websiteVal || null,
+        registration_fee: Number(form.registrationFee),
+        logo: form.logo || null,
+        owner_user_id: userId,
+      });
+      etabId = created.id;
+    } catch (error) {
+      setSubmitError(`Erreur lors de la création de l'établissement: ${error instanceof Error ? error.message : 'réponse invalide'}`);
       setSubmitting(false);
       return;
     }

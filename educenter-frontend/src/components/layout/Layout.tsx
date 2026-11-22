@@ -16,14 +16,12 @@ import {
   LogOut
 } from 'lucide-react';
 import { useCenter } from '../../context/CenterContext.tsx';
-import { getFullName, clearToken } from '../../utils/auth';
-import { supabase } from '../../lib/supabaseClient';
+import { getFullName, getEmail, clearSession } from '../../utils/auth';
 import SearchModal from '../common/SearchModal';
 import NotificationsPopup from '../common/NotificationsPopup';
 
 const Sidebar = () => {
   const navigate = useNavigate();
-  const location = useLocation();
   const { etablissementId } = useParams<{ etablissementId: string }>();
   const basePath = etablissementId ? `/mes-etablissements/etablissement/${etablissementId}` : '';
   const mainItems = [
@@ -43,7 +41,7 @@ const Sidebar = () => {
     { name: 'Paramètres', path: `${basePath}/settings`, icon: <Settings size={20} /> },
   ];
 
-  const NavItem = ({ item }: { item: any }) => (
+  const NavItem = ({ item }: { item: { name: string; path: string; icon: React.ReactNode } }) => (
     <NavLink
       key={item.path}
       to={item.path}
@@ -57,9 +55,9 @@ const Sidebar = () => {
           textDecoration: 'none',
           color: isDashboardActive ? 'white' : 'rgba(255, 255, 255, 0.7)',
           backgroundColor: isDashboardActive ? 'rgba(255, 255, 255, 0.15)' : 'transparent',
-          borderLeft: isDashboardActive ? '4px solid white' : '4px solid transparent',
-          borderTop: '0.5px solid rgba(255, 255, 255, 0.05)',
-          borderBottom: '0.5px solid rgba(255, 255, 255, 0.05)',
+          borderLeft: 'none',
+          borderTop: 'none',
+          borderBottom: 'none',
           transition: 'all 0.2s ease',
           gap: '12px',
           fontSize: 'var(--text-base)',
@@ -104,36 +102,36 @@ const Sidebar = () => {
           fontSize: 'var(--text-xl)',
           fontWeight: 'bold',
           margin: 0,
-        }}>EduCenter</h1>
+        }}>Centria</h1>
       </div>
 
       <nav style={{ 
         flex: 1,
         display: 'flex',
         flexDirection: 'column',
-        gap: '18px',
+        gap: '14px',
         marginTop: '14px',
         paddingBottom: '20px'
       }}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
           <SectionTitle label="Menu" />
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
             {mainItems.map((item) => <NavItem key={item.path} item={item} />)}
           </div>
         </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '10px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '6px' }}>
           <SectionTitle label="Comptes" />
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
             {accountItems.map((item) => <NavItem key={item.path} item={item} />)}
           </div>
         </div>
 
         <div style={{ flex: 1 }} />
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
           <SectionTitle label="Other" />
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
             {secondaryItems.map((item) => <NavItem key={item.path} item={item} />)}
           </div>
         </div>
@@ -147,7 +145,7 @@ const Sidebar = () => {
         justifyContent: 'center',
         color: 'rgba(255, 255, 255, 0.5)'
       }}>
-        <span style={{ fontSize: '11px', letterSpacing: '0.05em' }}>EduCenter v0.1</span>
+        <span style={{ fontSize: '11px', letterSpacing: '0.05em' }}>Centria v0.1</span>
       </div>
     </div>
   );
@@ -207,7 +205,6 @@ const Layout: React.FC = () => {
   const getPageTitle = () => {
     const path = location.pathname;
     if (path === '/mes-etablissements') return 'Mes établissements';
-    if (path.includes('/dashboard')) return 'Tableau de bord';
     if (path.includes('/students')) return 'Étudiants';
     if (path.includes('/classes')) return 'Classes';
     if (path.includes('/finance')) return 'Paiements';
@@ -216,7 +213,7 @@ const Layout: React.FC = () => {
     if (path.includes('/profil')) return 'Mon profil';
     if (path.includes('/compte')) return 'Mon compte';
     if (path.includes('/parametres')) return 'Mon établissement';
-    return 'EduCenter ERP';
+    return 'Centria ERP';
   };
 
   return (
@@ -269,7 +266,7 @@ const Layout: React.FC = () => {
               onMouseEnter={(e) => { e.currentTarget.style.opacity = '0.75'; }}
               onMouseLeave={(e) => { e.currentTarget.style.opacity = '1'; }}
             >
-              {centerName || 'EduCenter'}
+              {centerName || 'Centria'}
             </div>
           </div>
 
@@ -360,14 +357,34 @@ const Layout: React.FC = () => {
           display: 'flex',
           flexDirection: 'column'
         }}>
-          <h2 style={{ 
-            fontSize: 'var(--text-2xl)', 
-            fontWeight: 'bold', 
-            marginBottom: '32px',
-            color: 'var(--color-text)'
-          }}>
-            {getPageTitle()}
-          </h2>
+          {location.pathname.includes('/dashboard') ? (
+            <div style={{ marginBottom: '32px' }}>
+              <h2 style={{ 
+                fontSize: '36px', 
+                fontWeight: 'bold', 
+                marginBottom: '14px',
+                color: 'var(--color-text)'
+              }}>
+                Bienvenue de retour, <span style={{ color: 'var(--color-primary)' }}>{getFullName().split(' ')[0]}</span> 👋
+              </h2>
+              <p style={{ 
+                fontSize: '15px', 
+                color: 'var(--color-text-secondary)',
+                fontWeight: 400 
+              }}>
+                Surveillez et gérez l'activité et l'environnement de votre centre éducatif en un coup d'œil.
+              </p>
+            </div>
+          ) : (
+            <h2 style={{ 
+              fontSize: 'var(--text-2xl)', 
+              fontWeight: 'bold', 
+              marginBottom: '32px',
+              color: 'var(--color-text)'
+            }}>
+              {getPageTitle()}
+            </h2>
+          )}
           <Outlet />
         </main>
       </div>
@@ -375,16 +392,12 @@ const Layout: React.FC = () => {
   );
 };
 
-const AccountDropdown = ({ etablissementId, onClose }: { etablissementId?: string; onClose: () => void }) => {
+const AccountDropdown = ({ onClose }: { etablissementId?: string; onClose: () => void }) => {
   const navigate = useNavigate();
   const [email, setEmail] = React.useState('');
 
   React.useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session?.user?.email) {
-        setEmail(session.user.email);
-      }
-    });
+    setEmail(getEmail() || '');
   }, []);
 
   return (
@@ -434,8 +447,7 @@ const AccountDropdown = ({ etablissementId, onClose }: { etablissementId?: strin
       <div
         onClick={() => {
           onClose();
-          clearToken();
-          supabase.auth.signOut();
+          clearSession();
           navigate('/login');
         }}
         style={{

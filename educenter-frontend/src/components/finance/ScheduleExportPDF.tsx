@@ -15,7 +15,7 @@ Font.register({
 });
 
 export interface ScheduleEvent {
-  id: number;
+  id: string;
   name: string;
   subject: string;
   teacher: string;
@@ -152,6 +152,17 @@ const styles = StyleSheet.create({
 
 const DAYS = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'];
 
+// Numeric time-slot bucketing (08-10 / 10-13 / 13-16 / 16-19 / 19+).
+const getScheduleSlot = (startTime: string) => {
+  const [hours, minutes] = startTime.split(':').map(Number);
+  const totalMinutes = hours * 60 + minutes;
+  if (totalMinutes <= 600) return 0;
+  if (totalMinutes <= 780) return 1;
+  if (totalMinutes <= 960) return 2;
+  if (totalMinutes <= 1140) return 3;
+  return 4;
+};
+
 export const ScheduleExportPDF: React.FC<ScheduleExportProps> = ({ 
   events, 
   title = "EMPLOI DU TEMPS",
@@ -184,13 +195,7 @@ export const ScheduleExportPDF: React.FC<ScheduleExportProps> = ({
                 {[0, 1, 2, 3, 4].map((colIdx) => (
                   <View key={colIdx} style={[styles.slot, colIdx === 4 ? { borderRightWidth: 0 } : {}]}>
                     {events
-                      .filter(e => e.day === dayIdx && (
-                        (colIdx === 0 && e.startTime <= '10:00') || 
-                        (colIdx === 1 && e.startTime > '10:00' && e.startTime <= '13:00') || 
-                        (colIdx === 2 && e.startTime > '13:00' && e.startTime <= '16:00') || 
-                        (colIdx === 3 && e.startTime > '16:00' && e.startTime <= '19:00') || 
-                        (colIdx === 4 && e.startTime > '19:00')
-                      ))
+                      .filter(e => e.day === dayIdx && getScheduleSlot(e.startTime) === colIdx)
                       .map(event => (
                         <View key={event.id} style={[styles.eventBox, { backgroundColor: event.color || '#e0f2fe' }]}>
                           <Text style={styles.eventName}>{event.name}</Text>

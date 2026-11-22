@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { useSearchParams, useParams } from 'react-router-dom';
 import { Plus, Edit2, Archive, Users, LayoutGrid, Calendar as CalendarIcon, Printer, Download, Clock, GraduationCap, Eye, EyeOff, Trash2, DollarSign, Palette } from 'lucide-react';
 import StatusBadge from '../../components/common/StatusBadge';
@@ -14,23 +14,21 @@ import { useClassSelection } from '../../context/ClassSelectionContext';
 import { ClassExportPDF } from '../../components/finance/ClassExportPDF';
 import { ScheduleExportPDF } from '../../components/finance/ScheduleExportPDF';
 import { downloadPDF } from '../../utils/exporterUtils';
-import { generateId } from '../../utils/id';
 import { useCenter } from '../../context/CenterContext';
-import { useLocalStorage } from '../../hooks/useLocalStorage';
 import EmptyDataOverlay from '../../components/common/EmptyDataOverlay';
+import {
+  classesService,
+  scheduleService,
+  type MappedClass,
+  type UiScheduleEvent,
+  classeUiToDb,
+  scheduleDbToUi,
+} from '../../api/apiService';
+import { seedLegacyClasses } from '../../utils/seed';
 
-type ScheduleEvent = {
-  id: number;
-  classId?: number;
-  name: string;
-  subject: string;
-  teacher: string;
-  day: number;
-  startTime: string;
-  endTime: string;
-  color?: string;
-  status?: 'ACTIVE' | 'ARCHIVED';
-};
+type ScheduleEvent = UiScheduleEvent;
+
+type StoredClass = MappedClass;
 
 type DayConfig = {
   startTime: string;
@@ -73,8 +71,8 @@ const STATUS_OPTIONS = [
 
 const TARIF_PERIOD_OPTIONS = [
   { label: 'Mensuel', value: 'mensuel' },
-  { label: 'Trimestriel', value: 'trimestrial' },
-  { label: 'Annuel', value: 'annuelle' },
+  { label: 'Trimestriel', value: 'trimestriel' },
+  { label: 'Annuel', value: 'annuel' },
 ];
 
 const initialClassFormData = {
@@ -96,38 +94,93 @@ const ClassesList: React.FC = () => {
   const { centerName } = useCenter();
   const { etablissementId } = useParams<{ etablissementId: string }>();
   const base = `/mes-etablissements/etablissement/${etablissementId}`;
-  const [classes, setClasses] = useLocalStorage<any[]>('classes', []);
-  const [scheduleEvents, setScheduleEvents] = useLocalStorage<ScheduleEvent[]>('scheduleEvents', []);
+  const [classes, setClasses] = useState<StoredClass[]>([]);
+  const [scheduleEvents, setScheduleEvents] = useState<ScheduleEvent[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [activeFilter, setActiveFilter] = useState('Toutes');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
-  const [editingClasse, setEditingClasse] = useState<any>(null);
+  const [editingClasse, setEditingClasse] = useState<StoredClass | null>(null);
   const [viewMode, setViewMode] = useState<'grid' | 'calendar'>('grid');
   const [scheduleContext, setScheduleContext] = useState<'grid' | 'cell' | 'event' | null>(null);
-  const [editingScheduleEventId, setEditingScheduleEventId] = useState<number | null>(null);
+  const [editingScheduleEventId, setEditingScheduleEventId] = useState<string | null>(null);
   const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
   const [isDiscardChangesModalOpen, setIsDiscardChangesModalOpen] = useState(false);
-  const [archiveTarget, setArchiveTarget] = useState<number | 'batch' | null>(null);
+  const [archiveTarget, setArchiveTarget] = useState<string | 'batch' | null>(null);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
-  const [deleteTarget, setDeleteTarget] = useState<number | 'all' | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<string | 'all' | null>(null);
   const [isDeleteArchivedEventModalOpen, setIsDeleteArchivedEventModalOpen] = useState(false);
-  const [deleteArchivedEventId, setDeleteArchivedEventId] = useState<number | 'all' | null>(null);
-  const [pendingScheduleArchiveId, setPendingScheduleArchiveId] = useState<number | null>(null);
-  const [hoveredPrintableEventId, setHoveredPrintableEventId] = useState<number | null>(null);
+  const [deleteArchivedEventId, setDeleteArchivedEventId] = useState<string | 'all' | null>(null);
+  const [pendingScheduleArchiveId, setPendingScheduleArchiveId] = useState<string | null>(null);
+  const [hoveredPrintableEventId, setHoveredPrintableEventId] = useState<string | null>(null);
   const [isExistingClassMode, setIsExistingClassMode] = useState(false);
-  const [selectedExistingClassId, setSelectedExistingClassId] = useState<number | null>(null);
-  const [scheduleExportSelectedEventIds, setScheduleExportSelectedEventIds] = useState<number[]>([]);
+  const [showCellChoice, setShowCellChoice] = useState(false);
+  const [selectedExistingClassId, setSelectedExistingClassId] = useState<string | null>(null);
+  const [scheduleExportSelectedEventIds, setScheduleExportSelectedEventIds] = useState<string[]>([]);
   const { selectedIds, showExportModal, setShowExportModal, clearSelection } = useClassSelection();
 
   const [formData, setFormData] = useState(initialClassFormData);
   const [dayConfigs, setDayConfigs] = useState<Record<string, DayConfig>>({});
   const [formSnapshot, setFormSnapshot] = useState(initialClassFormData);
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+
+  const clearFieldError = (field: string) => {
+    setFormErrors(prev => {
+      if (!prev[field]) return prev;
+      const next = { ...prev };
+      delete next[field];
+      return next;
+    });
+  };
 
   const [searchParams] = useSearchParams();
   const colorInputRef = useRef<HTMLInputElement>(null);
 
   const isFormDirty = JSON.stringify(formData) !== JSON.stringify(formSnapshot);
+
+  useEffect(() => {
+    if (Object.keys(formErrors).length > 0) {
+      const firstErrorField = Object.keys(formErrors)[0];
+      const el = document.getElementById(`field-${firstErrorField}`);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }
+  }, [formErrors]);
+
+  const loadClasses = useCallback(async () => {
+    if (!etablissementId) return;
+    setLoading(true);
+    try {
+      const [clsRows, schedRows] = await Promise.all([
+        classesService.list(etablissementId),
+        scheduleService.listByEtablissement(etablissementId),
+      ]);
+      setClasses(clsRows);
+      setScheduleEvents(schedRows.map((row) => scheduleDbToUi(row)));
+    } catch (err) {
+      console.error(err instanceof Error ? err.message : 'Failed to load classes');
+    } finally {
+      setLoading(false);
+    }
+  }, [etablissementId]);
+
+  useEffect(() => {
+    loadClasses();
+  }, [loadClasses]);
+
+  useEffect(() => {
+    if (!etablissementId) return;
+    seedLegacyClasses(etablissementId)
+      .then(({ seeded }) => {
+        if (seeded) loadClasses();
+      })
+      .catch((err) => {
+        console.error(err instanceof Error ? err.message : 'Seed failed');
+      });
+  }, [etablissementId, loadClasses]);
 
   const closeClassModal = () => {
     setIsModalOpen(false);
@@ -138,6 +191,8 @@ const ClassesList: React.FC = () => {
     setDayConfigs({});
     setIsExistingClassMode(false);
     setSelectedExistingClassId(null);
+    setShowCellChoice(false);
+    setFormErrors({});
   };
 
   const requestCloseClassModal = () => {
@@ -152,6 +207,16 @@ const ClassesList: React.FC = () => {
   const timeToMinutes = (time: string) => {
     const [hours, minutes] = time.split(':').map(Number);
     return hours * 60 + minutes;
+  };
+
+  // Numeric time-slot bucketing for the printable schedule (08-10 / 10-13 / 13-16 / 16-19 / 19+).
+  const getScheduleSlot = (startTime: string) => {
+    const minutes = timeToMinutes(startTime);
+    if (minutes <= timeToMinutes('10:00')) return 0;
+    if (minutes <= timeToMinutes('13:00')) return 1;
+    if (minutes <= timeToMinutes('16:00')) return 2;
+    if (minutes <= timeToMinutes('19:00')) return 3;
+    return 4;
   };
 
   const minutesToTime = (minutes: number) => {
@@ -198,21 +263,21 @@ const ClassesList: React.FC = () => {
     return Math.min(Math.max(duration, MIN_SESSION_DURATION), availableMinutes);
   };
 
-  const getClassScheduleEvent = (id: number, classId: number, data: typeof formData, dayValue: string, config: DayConfig) => ({
-    id,
-    classId,
-    name: data.name,
-    subject: data.subject,
-    teacher: data.teacher,
-    day: Number(dayValue),
-    startTime: config.startTime,
-    endTime: config.endTime,
-    color: data.color,
-    status: 'ACTIVE' as const,
-  });
-
   const handleClassFieldChange = (field: keyof typeof formData, value: string) => {
     setFormData({ ...formData, [field]: value });
+    clearFieldError(field);
+  };
+
+  const handleStatusChange = (value: string) => {
+    if (value === 'PAUSED') {
+      setDayConfigs({});
+    }
+    setFormData((prev) => ({
+      ...prev,
+      status: value,
+      day: value === 'PAUSED' ? '' : prev.day,
+    }));
+    clearFieldError('status');
   };
 
   const updateDayConfig = (dayValue: string, field: keyof DayConfig, value: string) => {
@@ -279,63 +344,152 @@ const ClassesList: React.FC = () => {
     }
   };
 
-  const handleSave = () => {
-    const nextClassId = editingClasse ? editingClasse.id : generateId();
-    const eventClassId = selectedExistingClassId || nextClassId;
+  const validateForm = (): Record<string, string> => {
+    const errors: Record<string, string> = {};
 
-    if (!selectedExistingClassId) {
-      const nextClass = {
-        id: nextClassId,
-        ...formData,
-        capacity: `0/${formData.maxCapacity}`,
-      };
+    if (!formData.name.trim()) {
+      errors.name = 'Le nom est requis';
+    } else if (formData.name.trim().length < 3) {
+      errors.name = 'Minimum 3 caractères';
+    } else if (formData.name.trim().length > 100) {
+      errors.name = 'Maximum 100 caractères';
+    }
 
-      if (editingClasse) {
-        setClasses(classes.map(c => c.id === editingClasse.id ? nextClass : c));
-      } else {
-        setClasses([...classes, nextClass]);
-      }
+    if (!formData.subject.trim()) {
+      errors.subject = 'La matière est requise';
+    } else if (formData.subject.trim().length < 2) {
+      errors.subject = 'Minimum 2 caractères';
+    }
+
+    if (!formData.level.trim()) {
+      errors.level = 'Le niveau est requis';
+    }
+
+    if (!formData.teacher.trim()) {
+      errors.teacher = 'Le professeur est requis';
+    } else if (formData.teacher.trim().length < 3) {
+      errors.teacher = 'Minimum 3 caractères';
+    }
+
+    if (!formData.maxCapacity || formData.maxCapacity < 1) {
+      errors.maxCapacity = 'Minimum 1 étudiant';
+    } else if (formData.maxCapacity > 100) {
+      errors.maxCapacity = 'Maximum 100 étudiants';
+    }
+
+    if (!formData.tarifAmount || formData.tarifAmount <= 0) {
+      errors.tarifAmount = 'Le montant doit être > 0';
+    }
+
+    const validPeriods = ['mensuel', 'trimestriel', 'annuel'];
+    if (!validPeriods.includes(formData.tarifPeriod)) {
+      errors.tarifPeriod = 'Période invalide';
+    }
+
+    if (!formData.color || !/^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/.test(formData.color)) {
+      errors.color = 'Couleur invalide';
     }
 
     if (formData.day) {
-      const selectedDays = formData.day.split(',').filter(d => dayConfigs[d]);
-
-      if (scheduleContext === 'event' && editingScheduleEventId !== null) {
-        const originalEvent = scheduleEvents.find(e => e.id === editingScheduleEventId);
-
-        if (originalEvent?.classId) {
-          const classId = originalEvent.classId;
-          setScheduleEvents((current) => {
-            const withoutClass = current.filter(e => e.classId !== classId);
-            const newEvents = selectedDays.flatMap((day) => {
-              const config = dayConfigs[day];
-              if (!config) return [];
-              return getClassScheduleEvent(generateId(), classId, formData, day, config);
-            });
-            return [...withoutClass, ...newEvents];
-          });
-        } else if (selectedDays.length > 0) {
-          const config = dayConfigs[selectedDays[0]] || DEFAULT_DAY_CONFIG;
-          const nextEvent = getClassScheduleEvent(generateId(), eventClassId, formData, selectedDays[0], config);
-          setScheduleEvents((current) => current.map((event) => (event.id === editingScheduleEventId ? { ...nextEvent, id: editingScheduleEventId } : event)));
+      formData.day.split(',').filter(d => d).forEach(dayValue => {
+        const config = dayConfigs[dayValue];
+        if (!config || !config.startTime || !config.endTime) {
+          errors[`schedule_${dayValue}`] = 'Les horaires de la séance sont requis';
+        } else if (getDurationBetweenTimes(config.startTime, config.endTime) <= 0) {
+          errors[`schedule_${dayValue}`] = 'La fin doit être après le début';
         }
-      } else {
-        const newEvents = selectedDays.flatMap((day) => {
-          const config = dayConfigs[day];
-          if (!config) return [];
-          return getClassScheduleEvent(generateId(), eventClassId, formData, day, config);
-        });
-
-        if (newEvents.length > 0) {
-          setScheduleEvents((current) => [...current, ...newEvents]);
-        }
-      }
+      });
     }
 
-    closeClassModal();
+    return errors;
   };
 
-  const handleSelectExistingClass = (classId: number) => {
+  const buildClassPayload = () => classeUiToDb({
+    name: formData.name,
+    subject: formData.subject,
+    level: formData.level,
+    teacher: formData.teacher,
+    maxCapacity: formData.maxCapacity || 15,
+    tarifAmount: Number(formData.tarifAmount) || 0,
+    tarifPeriod: formData.tarifPeriod,
+    color: formData.color,
+    status: formData.status,
+  });
+
+  const syncSessions = async (classId: string, isNew = false) => {
+    if (formData.status === 'PAUSED') {
+      if (isNew) return;
+      const rows = await scheduleService.listByClass(classId);
+      const active = rows.filter((row) => row.status !== 'ARCHIVED');
+      for (const row of active) {
+        await scheduleService.update(row.id, { status: 'PAUSED' });
+      }
+      return;
+    }
+    const selectedDays = formData.day.split(',').filter(d => dayConfigs[d]);
+    const sessions = selectedDays.map((day) => ({
+      day: Number(day),
+      start_time: dayConfigs[day]?.startTime ?? '',
+      end_time: dayConfigs[day]?.endTime ?? '',
+    }));
+    if (isNew) {
+      await scheduleService.createForClass(classId, sessions);
+      return;
+    }
+    await scheduleService.replaceActiveForClass(classId, sessions);
+  };
+
+  const handleSave = async () => {
+    const errors = validateForm();
+    setFormErrors(errors);
+
+    if (Object.keys(errors).length > 0) {
+      return;
+    }
+
+    if (!etablissementId) return;
+    setSaving(true);
+    let createdClassId: string | null = null;
+    try {
+      if (scheduleContext === 'event') {
+        const targetEvent = editingScheduleEventId !== null ? scheduleEvents.find((e) => e.id === editingScheduleEventId) : null;
+        const classId = targetEvent?.classId ?? editingClasse?.id ?? selectedExistingClassId;
+        if (!classId) return;
+        await classesService.update(classId, buildClassPayload());
+        await syncSessions(classId);
+      } else if (selectedExistingClassId) {
+        await classesService.update(selectedExistingClassId, buildClassPayload());
+        await syncSessions(selectedExistingClassId);
+      } else if (editingClasse) {
+        await classesService.update(editingClasse.id, buildClassPayload());
+        await syncSessions(editingClasse.id);
+      } else {
+        const created = await classesService.create({
+          ...buildClassPayload(),
+          etablissement_id: etablissementId,
+        });
+        createdClassId = (created as { id: string }).id;
+        await syncSessions(createdClassId, true);
+      }
+
+      closeClassModal();
+    } catch (err) {
+      console.error(err instanceof Error ? err.message : 'Failed to save class');
+      if (createdClassId) {
+        try {
+          await classesService.remove(createdClassId);
+        } catch (rmErr) {
+          console.error(rmErr instanceof Error ? rmErr.message : 'Failed to rollback class');
+        }
+      }
+      alert('L\u2019enregistrement a échoué : la classe et ses séances doivent être créées ensemble. Veuillez réessayer.');
+    } finally {
+      setSaving(false);
+    }
+    loadClasses();
+  };
+
+  const handleSelectExistingClass = (classId: string) => {
     const selectedClass = classes.find(c => c.id === classId);
     if (!selectedClass) return;
     setSelectedExistingClassId(classId);
@@ -345,24 +499,26 @@ const ClassesList: React.FC = () => {
       subject: selectedClass.subject,
       level: selectedClass.level || '',
       teacher: selectedClass.teacher,
-      maxCapacity: parseInt(selectedClass.capacity.split('/')[1]) || 15,
+      maxCapacity: selectedClass.maxCapacity || 15,
       tarifAmount: selectedClass.tarifAmount || 0,
       tarifPeriod: selectedClass.tarifPeriod || 'mensuel',
       tarifCustomLabel: selectedClass.tarifCustomLabel || '',
       day: formData.day,
-      color: '#e5e7eb',
+      color: selectedClass.color || '#e5e7eb',
     });
   };
 
-  const handleArchiveSession = (id: number) => {
+  const handleArchiveSession = async (id: string) => {
     const targetEvent = scheduleEvents.find((event) => event.id === id);
+    if (!targetEvent) return;
 
-    if (targetEvent?.status === 'ARCHIVED') {
-      setScheduleEvents((current) => current.map((event) => (
-        event.id === id
-          ? { ...event, status: 'ACTIVE' }
-          : event
-      )));
+    if (targetEvent.status === 'ARCHIVED') {
+      try {
+        await scheduleService.restore(id);
+        loadClasses();
+      } catch (err) {
+        console.error(err instanceof Error ? err.message : 'Failed to restore session');
+      }
       return;
     }
 
@@ -376,6 +532,7 @@ const ClassesList: React.FC = () => {
     setEditingScheduleEventId(null);
     setEditingClasse(null);
     setIsExistingClassMode(false);
+    setShowCellChoice(true);
     setSelectedExistingClassId(null);
     const dayStr = String(day);
     const nextFormData = {
@@ -397,12 +554,13 @@ const ClassesList: React.FC = () => {
     setScheduleContext('event');
     setEditingScheduleEventId(event.id);
     setEditingClasse(relatedClass ?? null);
+    setShowCellChoice(false);
 
     const allDays: string[] = [];
     const configs: Record<string, DayConfig> = {};
 
     if (event.classId) {
-      const siblings = scheduleEvents.filter(e => e.classId === event.classId);
+      const siblings = scheduleEvents.filter(e => e.classId === event.classId && e.status !== 'ARCHIVED');
       siblings.forEach((sibling) => {
         const dStr = String(sibling.day);
         if (!allDays.includes(dStr)) {
@@ -432,7 +590,7 @@ const ClassesList: React.FC = () => {
       level: relatedClass?.level ?? '',
       schedule: relatedClass?.schedule ?? 'Matin',
       teacher: relatedClass?.teacher ?? event.teacher,
-      maxCapacity: relatedClass ? parseInt(relatedClass.capacity.split('/')[1]) : 15,
+      maxCapacity: relatedClass?.maxCapacity ?? 15,
       tarifAmount: relatedClass?.tarifAmount ?? 0,
       tarifPeriod: relatedClass?.tarifPeriod ?? 'mensuel',
       tarifCustomLabel: relatedClass?.tarifCustomLabel ?? '',
@@ -447,11 +605,14 @@ const ClassesList: React.FC = () => {
     setIsModalOpen(true);
   };
 
-  const handleOpenModal = (classe: any = null, schedulePrefill?: Partial<ScheduleEvent>) => {
+  const handleOpenModal = (classe: StoredClass | null = null, schedulePrefill?: Partial<ScheduleEvent>) => {
     setScheduleContext('grid');
     setEditingScheduleEventId(null);
+    setShowCellChoice(false);
     setIsDiscardChangesModalOpen(false);
     const prefillDay = schedulePrefill?.day !== undefined ? String(schedulePrefill.day) : '';
+
+    let nextDayConfigs: Record<string, DayConfig> = {};
     if (classe) {
       setEditingClasse(classe);
       const nextFormData = {
@@ -460,7 +621,7 @@ const ClassesList: React.FC = () => {
         level: classe.level,
         schedule: classe.schedule,
         teacher: classe.teacher,
-        maxCapacity: parseInt(classe.capacity.split('/')[1]),
+        maxCapacity: classe.maxCapacity || 15,
         tarifAmount: classe.tarifAmount || 0,
         tarifPeriod: classe.tarifPeriod || 'mensuel',
         tarifCustomLabel: classe.tarifCustomLabel || '',
@@ -468,6 +629,26 @@ const ClassesList: React.FC = () => {
         day: prefillDay,
         color: schedulePrefill?.color ?? '#e0f2fe',
       };
+      if (!prefillDay && classe.id) {
+        const allDays: string[] = [];
+        const configs: Record<string, DayConfig> = {};
+        scheduleEvents.forEach((sibling) => {
+          if (sibling.classId !== classe.id || sibling.status === 'ARCHIVED') return;
+          const dStr = String(sibling.day);
+          if (!allDays.includes(dStr)) {
+            allDays.push(dStr);
+            configs[dStr] = {
+              startTime: sibling.startTime,
+              endTime: sibling.endTime,
+              durationMinutes: String(clampDuration(sibling.startTime, getDurationBetweenTimes(sibling.startTime, sibling.endTime))),
+            };
+          }
+        });
+        if (allDays.length > 0) {
+          nextFormData.day = allDays.join(',');
+          nextDayConfigs = configs;
+        }
+      }
       setFormData(nextFormData);
       setFormSnapshot(nextFormData);
     } else {
@@ -482,10 +663,9 @@ const ClassesList: React.FC = () => {
     }
     if (prefillDay && schedulePrefill?.startTime && schedulePrefill?.endTime) {
       const duration = String(clampDuration(schedulePrefill.startTime, getDurationBetweenTimes(schedulePrefill.startTime, schedulePrefill.endTime)));
-      setDayConfigs({ [prefillDay]: { startTime: schedulePrefill.startTime, endTime: schedulePrefill.endTime, durationMinutes: duration } });
-    } else {
-      setDayConfigs({});
+      nextDayConfigs = { [prefillDay]: { startTime: schedulePrefill.startTime, endTime: schedulePrefill.endTime, durationMinutes: duration } };
     }
+    setDayConfigs(nextDayConfigs);
     setIsModalOpen(true);
   };
 
@@ -494,9 +674,10 @@ const ClassesList: React.FC = () => {
       handleOpenModal();
       window.history.replaceState(null, '', `${base}/classes`);
     }
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams, base]);
 
-  const handleOpenConfirmModal = (id: number | 'batch') => {
+  const handleOpenConfirmModal = (id: string | 'batch') => {
     setArchiveTarget(id);
     setIsConfirmModalOpen(true);
   };
@@ -507,26 +688,30 @@ const ClassesList: React.FC = () => {
     setPendingScheduleArchiveId(null);
   };
 
-  const handleConfirmArchive = () => {
-    if (pendingScheduleArchiveId !== null) {
-      setScheduleEvents((current) => current.map((event) => (
-        event.id === pendingScheduleArchiveId
-          ? { ...event, status: 'ARCHIVED' }
-          : event
-      )));
-    } else if (archiveTarget === 'batch') {
-      const selectedClassIds = classes.filter(c => selectedIds.includes(c.id)).map(c => c.id);
-      setClasses(classes.map(c => selectedIds.includes(c.id) ? { ...c, status: 'ARCHIVED' } : c));
-      setScheduleEvents((current) => current.filter(e => e.classId === undefined || !selectedClassIds.includes(e.classId)));
-      clearSelection();
-    } else if (archiveTarget !== null) {
-      setClasses(classes.map(c => c.id === archiveTarget ? { ...c, status: 'ARCHIVED' } : c));
-      setScheduleEvents((current) => current.filter(e => e.classId !== archiveTarget));
+  const handleConfirmArchive = async () => {
+    try {
+      if (pendingScheduleArchiveId !== null) {
+        await scheduleService.archive(pendingScheduleArchiveId);
+      } else if (archiveTarget === 'batch') {
+        const selectedClassIds = classes.filter(c => selectedIds.includes(c.id)).map(c => c.id);
+        for (const id of selectedClassIds) {
+          await classesService.archive(id);
+          await scheduleService.removeByClass(id);
+        }
+        clearSelection();
+      } else if (archiveTarget !== null) {
+        await classesService.archive(archiveTarget);
+        await scheduleService.removeByClass(archiveTarget);
+      }
+    } catch (err) {
+      console.error(err instanceof Error ? err.message : 'Failed to archive');
+    } finally {
+      handleCloseConfirmModal();
+      loadClasses();
     }
-    handleCloseConfirmModal();
   };
 
-  const handleDeleteArchivedEvent = (id: number) => {
+  const handleDeleteArchivedEvent = (id: string) => {
     setDeleteArchivedEventId(id);
     setIsDeleteArchivedEventModalOpen(true);
   };
@@ -536,10 +721,16 @@ const ClassesList: React.FC = () => {
     setIsDeleteArchivedEventModalOpen(true);
   };
 
-  const handleArchive = (id: number) => {
+  const handleArchive = async (id: string) => {
     const targetClass = classes.find(c => c.id === id);
-    if (targetClass?.status === 'ARCHIVED') {
-      setClasses(classes.map(c => c.id === id ? { ...c, status: 'ACTIVE' } : c));
+    if (!targetClass) return;
+    if (targetClass.status === 'ARCHIVED') {
+      try {
+        await classesService.update(id, { status: 'ACTIVE' });
+        loadClasses();
+      } catch (err) {
+        console.error(err instanceof Error ? err.message : 'Failed to restore class');
+      }
     } else {
       handleOpenConfirmModal(id);
     }
@@ -566,7 +757,7 @@ const ClassesList: React.FC = () => {
 
   const schedulePrintableEvents = scheduleEvents.filter((event) => scheduleExportSelectedEventIds.includes(event.id));
 
-  const toggleScheduleExportEvent = (eventId: number) => {
+  const toggleScheduleExportEvent = (eventId: string) => {
     setScheduleExportSelectedEventIds((current) => (
       current.includes(eventId)
         ? current.filter((id) => id !== eventId)
@@ -602,6 +793,7 @@ const ClassesList: React.FC = () => {
                          c.teacher.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesFilter = activeFilter === 'Toutes' || 
                          (activeFilter === 'Actives' && c.status === 'ACTIVE') ||
+                         (activeFilter === 'Pausées' && c.status === 'PAUSED') ||
                          (activeFilter === 'Archivées' && c.status === 'ARCHIVED');
     return matchesSearch && matchesFilter;
   });
@@ -683,7 +875,7 @@ const ClassesList: React.FC = () => {
         alignItems: 'center',
         backgroundColor: 'var(--color-white)',
         padding: '16px',
-        borderRadius: '12px',
+        borderRadius: '0px',
         boxShadow: 'var(--shadow-sm)',
         border: '1px solid var(--color-border)',
         height: '68px', // Slightly decreased from 74px
@@ -781,7 +973,7 @@ const ClassesList: React.FC = () => {
               )}
               {viewMode === 'grid' && (
                 <div style={{ display: 'flex', gap: '8px' }}>
-                  {['Toutes', 'Actives', 'Archivées'].map(f => (
+                  {['Toutes', 'Actives', 'Pausées', 'Archivées'].map(f => (
                     <FilterChip 
                       key={f} 
                       label={f} 
@@ -796,16 +988,21 @@ const ClassesList: React.FC = () => {
         </div>
       </div>
 
-      {viewMode === 'grid' ? (
+      {loading ? (
+        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '80px 0', color: 'var(--color-text-secondary)', fontSize: '0.95rem' }}>
+          <Clock size={22} style={{ marginRight: '10px', animation: 'spin 1s linear infinite' }} />
+          Chargement des classes...
+        </div>
+      ) : viewMode === 'grid' ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '48px', position: 'relative' }}>
-          {filteredClasses.filter(c => c.status === 'ACTIVE').length === 0 && <EmptyDataOverlay topOffset="48px" />}
+          {filteredClasses.filter(c => c.status !== 'ARCHIVED').length === 0 && <EmptyDataOverlay topOffset="48px" />}
           {/* Active Classes Section */}
           <div style={{ 
             display: 'grid', 
             gridTemplateColumns: 'repeat(3, 1fr)', 
             gap: '24px' 
           }}>
-            {filteredClasses.filter(c => c.status === 'ACTIVE').map((classe) => {
+            {filteredClasses.filter(c => c.status !== 'ARCHIVED').map((classe) => {
               const [current, max] = classe.capacity.split('/').map(Number);
               const isFull = current >= max;
               
@@ -859,7 +1056,7 @@ const ClassesList: React.FC = () => {
                         </span>
                       </div>
                     </div>
-                    <StatusBadge status="ACTIVE" />
+                    <StatusBadge status={classe.status} />
                   </div>
 
                   <div style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: '16px', flex: 1 }}>
@@ -1132,59 +1329,96 @@ const ClassesList: React.FC = () => {
       <Modal 
         isOpen={isModalOpen} 
         onClose={requestCloseClassModal} 
-        title={editingClasse ? "Modifier la classe" : "Ajouter une classe"}
+        title={editingClasse
+          ? "Modifier la classe"
+          : scheduleContext === 'cell' && (showCellChoice || isExistingClassMode)
+            ? "Ajouter une séance"
+            : "Ajouter une classe"}
         width="880px"
         footer={
           <>
-            <PrimaryButton label="Enregistrer" onClick={handleSave} />
+            {!(scheduleContext === 'cell' && showCellChoice) && (
+              <PrimaryButton label="Enregistrer" onClick={handleSave} disabled={saving} />
+            )}
           </>
         }
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: '18px', width: '100%' }}>
-          {scheduleContext === 'cell' && !isExistingClassMode && (
-            <div style={{ padding: '12px 16px', backgroundColor: '#f3f4f6', borderRadius: '12px', border: '1px solid #d1d5db', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <span style={{ fontSize: '13px', color: '#374151', fontWeight: 500 }}>
-                Ajouter un créneau à une classe existante ?
-              </span>
+          {scheduleContext === 'cell' && showCellChoice && (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '16px' }}>
               <button
                 type="button"
-                onClick={() => setIsExistingClassMode(true)}
+                onClick={() => { setShowCellChoice(false); setIsExistingClassMode(true); setSelectedExistingClassId(null); }}
                 style={{
-                  padding: '6px 14px', borderRadius: '8px', border: '1px solid #6b7280',
-                  backgroundColor: 'white', fontSize: '12px', fontWeight: 600,
-                  cursor: 'pointer', color: '#374151', transition: 'all 0.2s'
+                  display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '12px',
+                  padding: '20px', borderRadius: '14px', border: '1px solid var(--color-border)',
+                  backgroundColor: 'var(--color-white)', cursor: 'pointer', textAlign: 'left',
+                  boxShadow: 'var(--shadow-sm)', transition: 'border-color 0.2s, box-shadow 0.2s, transform 0.2s',
                 }}
-                onMouseOver={(e) => { e.currentTarget.style.backgroundColor = '#374151'; e.currentTarget.style.color = 'white'; }}
-                onMouseOut={(e) => { e.currentTarget.style.backgroundColor = 'white'; e.currentTarget.style.color = '#374151'; }}
+                onMouseOver={(e) => { e.currentTarget.style.borderColor = 'var(--color-primary)'; e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 6px 16px rgba(5, 150, 105, 0.12)'; }}
+                onMouseOut={(e) => { e.currentTarget.style.borderColor = 'var(--color-border)'; e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = 'var(--shadow-sm)'; }}
               >
-                Ajouter
+                <div style={{ width: '40px', height: '40px', borderRadius: '10px', backgroundColor: 'var(--color-primary-light)', color: 'var(--color-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Clock size={20} />
+                </div>
+                <div>
+                  <span style={{ display: 'block', fontSize: 'var(--text-base)', fontWeight: 700, color: 'var(--color-text)' }}>
+                    Ajouter un créneau à une classe existante
+                  </span>
+                  <span style={{ display: 'block', marginTop: '4px', fontSize: 'var(--text-sm)', color: 'var(--color-text-secondary)' }}>
+                    Choisissez une classe déjà créée et planifiez sa séance pour ce créneau.
+                  </span>
+                </div>
+              </button>
+              <button
+                type="button"
+                onClick={() => { setShowCellChoice(false); setIsExistingClassMode(false); setSelectedExistingClassId(null); }}
+                style={{
+                  display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '12px',
+                  padding: '20px', borderRadius: '14px', border: '1px solid var(--color-border)',
+                  backgroundColor: 'var(--color-white)', cursor: 'pointer', textAlign: 'left',
+                  boxShadow: 'var(--shadow-sm)', transition: 'border-color 0.2s, box-shadow 0.2s, transform 0.2s',
+                }}
+                onMouseOver={(e) => { e.currentTarget.style.borderColor = 'var(--color-primary)'; e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 6px 16px rgba(5, 150, 105, 0.12)'; }}
+                onMouseOut={(e) => { e.currentTarget.style.borderColor = 'var(--color-border)'; e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = 'var(--shadow-sm)'; }}
+              >
+                <div style={{ width: '40px', height: '40px', borderRadius: '10px', backgroundColor: 'var(--color-primary-light)', color: 'var(--color-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <GraduationCap size={20} />
+                </div>
+                <div>
+                  <span style={{ display: 'block', fontSize: 'var(--text-base)', fontWeight: 700, color: 'var(--color-text)' }}>
+                    Ajouter une nouvelle classe en ce créneau
+                  </span>
+                  <span style={{ display: 'block', marginTop: '4px', fontSize: 'var(--text-sm)', color: 'var(--color-text-secondary)' }}>
+                    Créez une nouvelle classe et planifiez sa première séance pour ce créneau.
+                  </span>
+                </div>
               </button>
             </div>
           )}
 
           {scheduleContext === 'cell' && isExistingClassMode && (
-            <div style={{ padding: '12px 16px', backgroundColor: '#f3f4f6', borderRadius: '12px', border: '1px solid #d1d5db' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
-                <span style={{ fontSize: '13px', color: '#374151', fontWeight: 500 }}>
-                  Sélectionnez une classe existante
-                </span>
-                <button
-                  type="button"
-                  onClick={() => { setIsExistingClassMode(false); setSelectedExistingClassId(null); handleCreateClassFromCell({
-                    day: Number(formData.day),
-                    startTime: dayConfigs[formData.day.split(',').filter(d => d)[0]]?.startTime || '08:00',
-                    endTime: dayConfigs[formData.day.split(',').filter(d => d)[0]]?.endTime || '10:00',
-                  }); }}
-                  style={{ marginLeft: 'auto', padding: '4px 8px', borderRadius: '6px', border: '1px solid #d1d5db', backgroundColor: 'white', cursor: 'pointer', color: '#374151', fontSize: '12px', fontWeight: 500 }}
-                >
-                  Annuler
-                </button>
-              </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', width: '100%' }}>
+              <button
+                type="button"
+                onClick={() => { setIsExistingClassMode(false); setSelectedExistingClassId(null); setShowCellChoice(true); }}
+                style={{ alignSelf: 'flex-start', padding: '6px 14px', borderRadius: '8px', border: '1px solid #d1d5db', backgroundColor: 'white', cursor: 'pointer', color: '#374151', fontSize: '13px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px', transition: 'all 0.2s' }}
+                onMouseOver={(e) => { e.currentTarget.style.backgroundColor = '#374151'; e.currentTarget.style.color = 'white'; }}
+                onMouseOut={(e) => { e.currentTarget.style.backgroundColor = 'white'; e.currentTarget.style.color = '#374151'; }}
+              >
+                ← Retour
+              </button>
+              <div style={{ padding: '12px 16px', backgroundColor: '#f3f4f6', borderRadius: '12px', border: '1px solid #d1d5db' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
+                  <span style={{ fontSize: '13px', color: '#374151', fontWeight: 500 }}>
+                    Sélectionnez une classe existante
+                  </span>
+                </div>
               <select
                 value={selectedExistingClassId || ''}
                 onChange={(e) => {
                   const val = e.target.value;
-                  if (val) handleSelectExistingClass(Number(val));
+                  if (val) handleSelectExistingClass(val);
                 }}
                 style={{
                   width: '100%', padding: '10px 12px', borderRadius: '8px',
@@ -1233,9 +1467,10 @@ const ClassesList: React.FC = () => {
                 );
               })()}
             </div>
+            </div>
           )}
 
-          {!isExistingClassMode && (
+          {!isExistingClassMode && !showCellChoice && (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '16px' }}>
                 <div>
                   <FormInput 
@@ -1243,7 +1478,9 @@ const ClassesList: React.FC = () => {
                     value={formData.name} 
                     onChange={(e) => handleClassFieldChange('name', e.target.value)} 
                     required 
-                    placeholder="ex: G1"
+                    placeholder="ex: Anglais B2"
+                    inputId="field-name"
+                    error={formErrors.name}
                   />
                 </div>
                 <div>
@@ -1253,15 +1490,20 @@ const ClassesList: React.FC = () => {
                     onChange={(e) => handleClassFieldChange('subject', e.target.value)} 
                     required 
                     placeholder="ex: Anglais"
+                    inputId="field-subject"
+                    error={formErrors.subject}
                   />
                 </div>
 
                 <div>
                   <FormInput 
-                    label="Niveau (Optionnel)" 
+                    label="Niveau" 
                     value={formData.level} 
                     onChange={(e) => handleClassFieldChange('level', e.target.value)} 
+                    required
                     placeholder="ex: B2"
+                    inputId="field-level"
+                    error={formErrors.level}
                   />
                 </div>
                 <div>
@@ -1271,6 +1513,8 @@ const ClassesList: React.FC = () => {
                     onChange={(e) => handleClassFieldChange('teacher', e.target.value)} 
                     required 
                     placeholder="Nom du professeur"
+                    inputId="field-teacher"
+                    error={formErrors.teacher}
                   />
                 </div>
 
@@ -1279,8 +1523,11 @@ const ClassesList: React.FC = () => {
                     label="Capacité Max" 
                     type="number"
                     value={formData.maxCapacity} 
-                    onChange={(e) => setFormData({ ...formData, maxCapacity: parseInt(e.target.value) || 0 })} 
+                    onChange={(e) => { setFormData({ ...formData, maxCapacity: parseInt(e.target.value) || 0 }); clearFieldError('maxCapacity'); }} 
                     min={1}
+                    max={100}
+                    inputId="field-maxCapacity"
+                    error={formErrors.maxCapacity}
                   />
                 </div>
                 <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-end' }}>
@@ -1289,9 +1536,11 @@ const ClassesList: React.FC = () => {
                       label="Montant du tarif (MAD)"
                       type="number"
                       value={formData.tarifAmount}
-                      onChange={(e) => setFormData({ ...formData, tarifAmount: parseInt(e.target.value) || 0 })}
-                      min={0}
+                      onChange={(e) => { setFormData({ ...formData, tarifAmount: parseInt(e.target.value) || 0 }); clearFieldError('tarifAmount'); }}
+                      min={1}
                       placeholder="ex: 300"
+                      inputId="field-tarifAmount"
+                      error={formErrors.tarifAmount}
                     />
                   </div>
                   <div style={{ flex: 1 }}>
@@ -1299,8 +1548,10 @@ const ClassesList: React.FC = () => {
                       label="Période"
                       type="select"
                       value={formData.tarifPeriod}
-                      onChange={(e) => setFormData({ ...formData, tarifPeriod: e.target.value })}
+                      onChange={(e) => { setFormData({ ...formData, tarifPeriod: e.target.value }); clearFieldError('tarifPeriod'); }}
                       options={TARIF_PERIOD_OPTIONS}
+                      inputId="field-tarifPeriod"
+                      error={formErrors.tarifPeriod}
                     />
                   </div>
                 </div>
@@ -1309,7 +1560,7 @@ const ClassesList: React.FC = () => {
                     label="Statut"
                     type="select"
                     value={formData.status}
-                    onChange={(e) => handleClassFieldChange('status', e.target.value)}
+                    onChange={(e) => handleStatusChange(e.target.value)}
                     options={STATUS_OPTIONS}
                   />
                 </div>
@@ -1326,7 +1577,7 @@ const ClassesList: React.FC = () => {
                     </div>
                   </div>
                 ) : (
-                  <div style={{ marginRight: '24px' }}>
+                  <div style={{ marginRight: '24px' }} id="field-color">
                     <div style={{ border: '1px solid var(--color-border)', borderRadius: '14px', padding: '16px', backgroundColor: 'var(--color-gray-bg)' }}>
                       <p style={{ margin: 0, fontSize: 'var(--text-xs)', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--color-text-secondary)' }}>
                         Couleur
@@ -1386,15 +1637,23 @@ const ClassesList: React.FC = () => {
                         <span style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>Couleur sélectionnée</span>
                       </div>
                     </div>
+                    {formErrors.color && (
+                      <span style={{ fontSize: '12px', color: 'var(--color-danger)', marginTop: '6px', display: 'block', paddingLeft: '4px' }}>
+                        {formErrors.color}
+                      </span>
+                    )}
                   </div>
                 )}
             </div>
           )}
 
-          <div style={{ borderTop: '1px solid #eee', marginTop: '8px', paddingTop: '18px' }}>
-            <p style={{ fontSize: 'var(--text-xs)', fontWeight: 600, color: 'var(--color-text-secondary)', marginBottom: '12px', textTransform: 'uppercase' }}>
-              Planification des séances
-            </p>
+          {formData.status !== 'PAUSED' && !showCellChoice && (
+          <div style={{ borderTop: isExistingClassMode ? 'none' : '1px solid #d1d5db', marginTop: isExistingClassMode ? '0' : '24px', paddingTop: isExistingClassMode ? '0' : '18px' }}>
+            {!isExistingClassMode && (
+              <p style={{ fontSize: 'var(--text-xs)', fontWeight: 700, color: 'var(--color-text)', marginBottom: '12px', textTransform: 'uppercase' }}>
+                Planification des séances
+              </p>
+            )}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '18px', width: '100%' }}>
               <div style={{ border: '1px solid var(--color-border)', borderRadius: '14px', padding: '16px', backgroundColor: 'var(--color-white)', width: 'fit-content', minWidth: '380px', alignSelf: 'flex-start', boxShadow: 'var(--shadow-sm)' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '14px' }}>
@@ -1472,21 +1731,23 @@ const ClassesList: React.FC = () => {
                         label="Début" 
                         type="time"
                         value={config.startTime}
-                        onChange={(e) => updateDayConfig(dayValue, 'startTime', e.target.value)}
+                        onChange={(e) => { updateDayConfig(dayValue, 'startTime', e.target.value); clearFieldError(`schedule_${dayValue}`); }}
                         placeholder="08:00"
+                        inputId={`field-schedule-${dayValue}`}
                       />
                       <FormInput 
                         label="Fin" 
                         type="time"
                         value={config.endTime}
-                        onChange={(e) => updateDayConfig(dayValue, 'endTime', e.target.value)}
+                        onChange={(e) => { updateDayConfig(dayValue, 'endTime', e.target.value); clearFieldError(`schedule_${dayValue}`); }}
                         placeholder="10:00"
+                        error={formErrors[`schedule_${dayValue}`]}
                       />
                       <FormInput
                         label="Durée (min)"
                         type="number"
                         value={config.durationMinutes}
-                        onChange={(e) => updateDayConfig(dayValue, 'durationMinutes', e.target.value)}
+                        onChange={(e) => { updateDayConfig(dayValue, 'durationMinutes', e.target.value); clearFieldError(`schedule_${dayValue}`); }}
                         placeholder="120"
                         min={MIN_SESSION_DURATION}
                         max={getAvailableMinutes(config.startTime)}
@@ -1501,6 +1762,7 @@ const ClassesList: React.FC = () => {
 
             </div>
           </div>
+          )}
         </div>
       </Modal>
 
@@ -1634,11 +1896,8 @@ const ClassesList: React.FC = () => {
                                 gap: '8px',
                                 position: 'relative'
                               }}>
-                                {/* Event placement in columns (mock logic or based on data) */}
-                                {scheduleEvents.filter((e) => e.day === dayIdx && ((colIdx === 0 && e.startTime <= '10:00') || (colIdx === 1 && e.startTime > '10:00' && e.startTime <= '13:00') || (colIdx === 2 && e.startTime > '13:00' && e.startTime <= '16:00') || (colIdx === 3 && e.startTime > '16:00' && e.startTime <= '19:00') || (colIdx === 4 && e.startTime > '19:00'))).map((event) => {
-                                  const isSelected = scheduleExportSelectedEventIds.includes(event.id);
-
-                                  return (
+                                {/* Event placement in columns (based on numeric time buckets) */}
+                                {schedulePrintableEvents.filter((e) => e.day === dayIdx && getScheduleSlot(e.startTime) === colIdx).map((event) => (
                                   <div
                                     key={event.id}
                                     onMouseEnter={() => setHoveredPrintableEventId(event.id)}
@@ -1661,12 +1920,11 @@ const ClassesList: React.FC = () => {
                                     height: '100%',
                                     position: 'relative',
                                     opacity: 1,
-                                    filter: isSelected ? 'none' : 'saturate(0.45) brightness(1.08)',
-                                    transition: 'transform 0.15s ease, box-shadow 0.15s ease, filter 0.15s ease'
+                                    transition: 'transform 0.15s ease, box-shadow 0.15s ease'
                                   }}>
                                     <button
                                       type="button"
-                                      title={isSelected ? 'Exclure cette timeline' : 'Inclure cette timeline'}
+                                      title="Exclure cette séance"
                                       onClick={(e) => {
                                         e.stopPropagation();
                                         toggleScheduleExportEvent(event.id);
@@ -1680,7 +1938,7 @@ const ClassesList: React.FC = () => {
                                         borderRadius: '999px',
                                         border: '1px solid rgba(15, 23, 42, 0.14)',
                                         backgroundColor: hoveredPrintableEventId === event.id ? 'rgba(255,255,255,0.96)' : 'rgba(255,255,255,0.84)',
-                                        color: isSelected ? '#0f172a' : '#2563eb',
+                                        color: '#0f172a',
                                         display: 'flex',
                                         alignItems: 'center',
                                         justifyContent: 'center',
@@ -1690,16 +1948,15 @@ const ClassesList: React.FC = () => {
                                         transition: 'opacity 0.15s ease, transform 0.15s ease, background-color 0.15s ease',
                                       }}
                                     >
-                                      {isSelected ? <EyeOff size={14} /> : <Eye size={14} />}
+                                      <EyeOff size={14} />
                                     </button>
-                                    <div style={{ fontWeight: 'bold', color: isSelected ? '#111827' : '#7c8b9a', fontSize: '12px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{event.name}</div>
-                                    <div style={{ fontSize: '10px', color: isSelected ? '#064e3b' : '#7a8a98', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                    <div style={{ fontWeight: 'bold', color: '#111827', fontSize: '12px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{event.name}</div>
+                                    <div style={{ fontSize: '10px', color: '#064e3b', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '4px' }}>
                                       <Clock size={10} /> {event.startTime} - {event.endTime}
                                     </div>
-                                    <div style={{ fontSize: '10px', color: isSelected ? '#4b5563' : '#94a3b8' }}>{event.teacher}</div>
+                                    <div style={{ fontSize: '10px', color: '#4b5563' }}>{event.teacher}</div>
                                   </div>
-                                  );
-                                })}
+                                ))}
                               </div>
                             ))}
                           </div>
@@ -1722,6 +1979,39 @@ const ClassesList: React.FC = () => {
               </div>
             </div>
           </div>
+
+          {scheduleExportSelectedEventIds.length < scheduleEvents.length && (
+            <div className="no-print" style={{ width: '1200px', flexShrink: 0, alignSelf: 'center', padding: '16px', marginTop: '16px', backgroundColor: '#fefce8', border: '1px solid #fde68a', borderRadius: '12px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
+                <span style={{ fontSize: '13px', fontWeight: 700, color: '#713f12' }}>
+                  {scheduleEvents.length - scheduleExportSelectedEventIds.length} séance(s) exclue(s) de l'export
+                </span>
+                <button
+                  onClick={() => setScheduleExportSelectedEventIds(scheduleEvents.map((event) => event.id))}
+                  style={{ padding: '6px 12px', borderRadius: '8px', border: '1px solid #d97706', backgroundColor: 'white', fontSize: '12px', fontWeight: 600, cursor: 'pointer', color: '#92400e' }}
+                >
+                  Tout réinclure
+                </button>
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                {scheduleEvents.filter((e) => !scheduleExportSelectedEventIds.includes(e.id)).map((event) => {
+                  const dayLabel = DAY_OPTIONS.find(d => d.value === String(event.day))?.label || '?';
+                  return (
+                    <button
+                      key={event.id}
+                      onClick={() => toggleScheduleExportEvent(event.id)}
+                      title="Réinclure cette séance"
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '6px 12px', borderRadius: '999px', border: '1px dashed #d97706', backgroundColor: 'white', cursor: 'pointer', fontSize: '12px' }}
+                    >
+                      <span style={{ fontWeight: 600, color: '#374151' }}>{event.name}</span>
+                      <span style={{ color: '#6b7280' }}>{dayLabel} • {event.startTime} - {event.endTime}</span>
+                      <Eye size={13} style={{ color: '#92400e' }} />
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
       </Modal>
 
@@ -1804,7 +2094,7 @@ const ClassesList: React.FC = () => {
               padding: '16px',
               border: '1px solid var(--color-border)'
             }}>
-              <p style={{ fontSize: 'var(--text-xs)', fontWeight: 600, color: 'var(--color-text-secondary)', marginBottom: '12px', textTransform: 'uppercase' }}>
+            <p style={{ fontSize: 'var(--text-xs)', fontWeight: 700, color: 'var(--color-text)', marginBottom: '12px', textTransform: 'uppercase' }}>
                 Aperçu de la sélection
               </p>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '200px', overflowY: 'auto' }}>
@@ -1865,7 +2155,7 @@ const ClassesList: React.FC = () => {
         <p style={{ color: 'var(--color-text-secondary)', fontSize: '0.9rem' }}>
           {pendingScheduleArchiveId !== null
             ? 'Elle sera déplacée vers la section des archives.'
-            : 'Elle sera déplacée vers la section des archives.'}
+            : 'La classe sera déplacée vers les archives et ses séances planifiées seront supprimées définitivement.'}
         </p>
       </div>
     </Modal>
@@ -1884,14 +2174,25 @@ const ClassesList: React.FC = () => {
             Annuler
           </button>
           <button
-            onClick={() => {
-              if (deleteTarget === 'all') {
-                setClasses(classes.filter(c => c.status !== 'ARCHIVED'));
-              } else {
-                setClasses(classes.filter(c => c.id !== deleteTarget));
+            onClick={async () => {
+              try {
+                if (deleteTarget === 'all') {
+                  const archivedClasses = classes.filter(c => c.status === 'ARCHIVED');
+                  for (const c of archivedClasses) {
+                    await classesService.remove(c.id);
+                    await scheduleService.removeByClass(c.id);
+                  }
+                } else if (deleteTarget !== null) {
+                  await classesService.remove(deleteTarget);
+                  await scheduleService.removeByClass(deleteTarget);
+                }
+                setIsDeleteModalOpen(false);
+                setDeleteTarget(null);
+                loadClasses();
+              } catch (err) {
+                console.error(err instanceof Error ? err.message : 'Failed to delete class');
+                alert(err instanceof Error ? err.message : 'Impossible de supprimer cette classe.');
               }
-              setIsDeleteModalOpen(false);
-              setDeleteTarget(null);
             }}
             style={{
               padding: '10px 20px', backgroundColor: 'var(--color-danger)',
@@ -1930,14 +2231,19 @@ const ClassesList: React.FC = () => {
             Annuler
           </button>
           <button
-            onClick={() => {
-              if (deleteArchivedEventId === 'all') {
-                setScheduleEvents((current) => current.filter(e => e.status !== 'ARCHIVED'));
-              } else if (deleteArchivedEventId !== null) {
-                setScheduleEvents((current) => current.filter(e => e.id !== deleteArchivedEventId));
+            onClick={async () => {
+              try {
+                if (deleteArchivedEventId === 'all') {
+                  if (etablissementId) await scheduleService.removeArchivedByEtablissement(etablissementId);
+                } else if (deleteArchivedEventId !== null) {
+                  await scheduleService.remove(deleteArchivedEventId);
+                }
+                setIsDeleteArchivedEventModalOpen(false);
+                setDeleteArchivedEventId(null);
+                loadClasses();
+              } catch (err) {
+                console.error(err instanceof Error ? err.message : 'Failed to delete session');
               }
-              setIsDeleteArchivedEventModalOpen(false);
-              setDeleteArchivedEventId(null);
             }}
             style={{
               padding: '10px 20px', backgroundColor: 'var(--color-danger)',

@@ -3,7 +3,7 @@ import React from 'react';
 type StatusType = 'ACTIVE' | 'PAUSED' | 'ON_HOLD' | 'DROPPED' | 'PAID' | 'PENDING' | 'OVERDUE' | 'ARCHIVED';
 
 interface StatusBadgeProps {
-  status: StatusType;
+  status: string;
   daysLate?: number;
 }
 
@@ -19,7 +19,7 @@ const statusConfig: Record<StatusType, { label: string; bg: string; text: string
 };
 
 const StatusBadge: React.FC<StatusBadgeProps> = ({ status, daysLate }) => {
-  const config = statusConfig[status] || statusConfig.ACTIVE;
+  const config = statusConfig[status as StatusType] || statusConfig.ACTIVE;
   const label = status === 'OVERDUE' && daysLate ? `${daysLate}j ${config.label}` : config.label;
 
   return (

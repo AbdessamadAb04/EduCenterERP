@@ -1,72 +1,107 @@
 package com.educentererp.module.finance;
 
-import jakarta.servlet.http.HttpServletResponse;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.educentererp.common.JsonValues;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-import java.io.*;
+
+import jakarta.servlet.http.HttpServletResponse;
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 @RestController
 @RequestMapping("/api/payments")
 @RequiredArgsConstructor
-@CrossOrigin("*")
 public class PaymentController {
+
     private final PaymentService paymentService;
+    private final ObjectMapper objectMapper;
+
+    @Value("${receipt.python-path:python}")
+    private String pythonPath;
+
+    @Value("${receipt.script-path:scripts/generate_receipt.py}")
+    private String scriptPath;
 
     @GetMapping
-    public List<Payment> getAllPayments() {
-        return paymentService.getAllPayments();
+    public List<PaymentResponse> list(@RequestParam(name = "etablissement_id", required = false) Long etablissementId) {
+        return paymentService.list(etablissementId);
+    }
+
+    @GetMapping("/{id}")
+    public PaymentResponse get(@PathVariable Long id) {
+        return paymentService.get(id);
     }
 
     @PostMapping
-    public Payment createPayment(@RequestBody Payment payment) {
-        return paymentService.savePayment(payment);
+    public PaymentResponse create(@RequestBody Map<String, Object> body) {
+        return paymentService.create(body);
     }
 
-    @GetMapping("/student/{studentId}")
-    public List<Payment> getByStudent(@PathVariable Long studentId) {
-        return paymentService.getPaymentsByStudent(studentId);
-    }
-
-    @GetMapping("/overdue")
-    public List<Payment> getOverdue() {
-        return paymentService.getOverduePayments();
+    @PutMapping("/{id}")
+    public PaymentResponse update(@PathVariable Long id, @RequestBody Map<String, Object> body) {
+        return paymentService.update(id, body);
     }
 
     @PutMapping("/{id}/pay")
-    public Payment markPaid(@PathVariable Long id, @RequestParam PaymentMethod method) {
-        return paymentService.markAsPaid(id, method);
+    public PaymentResponse markAsPaid(@PathVariable Long id, @RequestBody(required = false) Map<String, Object> body) {
+        return paymentService.markAsPaid(id, body == null ? Map.of() : body);
+    }
+
+    @PutMapping("/{id}/archive")
+    public PaymentResponse archive(@PathVariable Long id) {
+        return paymentService.update(id, Map.of("status", "ARCHIVED"));
+    }
+
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> delete(@PathVariable Long id) {
+        paymentService.delete(id);
+        return ResponseEntity.noContent().build();
     }
 
     @GetMapping("/{id}/receipt")
-    public void downloadReceipt(@PathVariable Long id, HttpServletResponse response) throws IOException, InterruptedException {
-        Payment payment = paymentService.getPaymentById(id);
-        if (payment == null) {
-            response.setStatus(HttpServletResponse.SC_NOT_FOUND);
-            return;
-        }
+    public void downloadReceipt(@PathVariable Long id, HttpServletResponse response)
+            throws IOException, InterruptedException {
+        Payment payment = paymentService.getEntity(id);
 
-        String pythonPath = "c:/Users/Dell/Desktop/I-Stock/My Projects/EduCenterERP/.venv/Scripts/python.exe";
-        String scriptPath = "c:/Users/Dell/Desktop/I-Stock/My Projects/EduCenterERP/educenter-backend/scripts/generate_receipt.py";
-        
-        String jsonData = "{\"id\":\"" + payment.getId() + "\", \"student\":\"" + payment.getStudent().getFullName() + "\", \"amount\":\"" + payment.getAmountMad() + "\", \"paymentDate\":\"" + payment.getPaymentDate() + "\", \"method\":\"" + payment.getMethod() + "\"}";
+        Map<String, Object> receiptData = new LinkedHashMap<>();
+        receiptData.put("id", JsonValues.idString(payment.getId()));
+        receiptData.put("student", payment.getStudent() == null ? "" : payment.getStudent().getFullName());
+        receiptData.put("amount", payment.getAmount());
+        receiptData.put("paymentDate", JsonValues.dateString(payment.getPaymentDate()));
+        receiptData.put("method", payment.getMethod());
+        String json = objectMapper.writeValueAsString(receiptData);
+
         Path tempFile = Files.createTempFile("receipt_", ".pdf");
-        
-        ProcessBuilder pb = new ProcessBuilder(pythonPath, scriptPath, jsonData, tempFile.toString());
-        pb.inheritIO();
-        Process p = pb.start();
-        p.waitFor();
+        try {
+            ProcessBuilder pb = new ProcessBuilder(pythonPath, scriptPath, json, tempFile.toString());
+            pb.redirectOutput(ProcessBuilder.Redirect.DISCARD);
+            pb.redirectError(ProcessBuilder.Redirect.DISCARD);
+            Process process = pb.start();
+            if (!process.waitFor(30, TimeUnit.SECONDS)) {
+                process.destroyForcibly();
+                process.waitFor();
+                response.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
+                return;
+            }
 
-        if (p.exitValue() == 0) {
-            response.setContentType("application/pdf");
-            response.setHeader("Content-Disposition", "attachment; filename=\"recu_" + id + ".pdf\"");
-            Files.copy(tempFile, response.getOutputStream());
-            response.getOutputStream().flush();
-        } else {
-            response.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
+            if (process.exitValue() == 0) {
+                response.setContentType("application/pdf");
+                response.setHeader("Content-Disposition", "attachment; filename=\"recu_" + id + ".pdf\"");
+                Files.copy(tempFile, response.getOutputStream());
+                response.getOutputStream().flush();
+            } else {
+                response.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
+            }
+        } finally {
+            Files.deleteIfExists(tempFile);
         }
-        Files.deleteIfExists(tempFile);
     }
 }

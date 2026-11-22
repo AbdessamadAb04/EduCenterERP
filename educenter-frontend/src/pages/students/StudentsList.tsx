@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useSearchParams, useParams } from 'react-router-dom';
-import { Plus, Edit2, Trash2, List, LayoutGrid, Download, Archive, Info, Printer } from 'lucide-react';
+import { Plus, Edit2, Trash2, List, LayoutGrid, Download, Archive, Printer } from 'lucide-react';
 import DataTable, { type Column } from '../../components/common/DataTable';
 import StatusBadge from '../../components/common/StatusBadge';
 import PrimaryButton from '../../components/common/PrimaryButton';
@@ -14,20 +14,34 @@ import StudentsByClass from './StudentsByClass';
 import { useStudentSelection } from '../../context/StudentSelectionContext';
 import { StudentExportPDF } from '../../components/finance/StudentExportPDF';
 import { downloadPDF } from '../../utils/exporterUtils';
-import { studentsService, classesService, paymentsService } from '../../api/supabaseService';
+import { studentsService, paymentsService, classesService, type MappedStudent } from '../../api/apiService';
+import { getItem } from '../../utils/storage';
+import { toDateInput } from '../../utils/date';
 
-const periodLabels: Record<string, string> = {
-  mensuel: 'mois',
-  trimestrial: 'trimestre',
-  annuelle: 'an',
-  custom: '',
-};
+interface ClassRow {
+  id: string;
+  name: string;
+  subject?: string;
+  level?: string;
+  teacher?: string;
+  max_capacity?: number;
+  maxCapacity?: number;
+  status?: string;
+  tarif_amount?: number;
+  tarifAmount?: number;
+  tarif_period?: string;
+  tarifPeriod?: string;
+  tarifCustomLabel?: string;
+  tarif?: number;
+  capacity?: string;
+  color?: string;
+}
 
 const initialStudentFormData = {
   full_name: '',
   phone: '',
   classe_id: '',
-  enrollment_date: new Date().toISOString().split('T')[0],
+  enrollment_date: toDateInput(),
   status: 'ACTIVE' as string,
   tuition_fee: 0,
   tuition_fee_status: 'PENDING' as string,
@@ -41,17 +55,16 @@ const StudentsList: React.FC = () => {
   const { etablissementId } = useParams<{ etablissementId: string }>();
   const base = `/mes-etablissements/etablissement/${etablissementId}`;
 
-  const [students, setStudents] = useState<any[]>([]);
-  const [classes, setClasses] = useState<any[]>([]);
+  const [students, setStudents] = useState<MappedStudent[]>([]);
+  const [classes, setClasses] = useState<ClassRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
 
   const [searchTerm, setSearchTerm] = useState('');
   const [activeFilter, setActiveFilter] = useState('Tous');
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
-  const [editingStudent, setEditingStudent] = useState<any>(null);
+  const [editingStudent, setEditingStudent] = useState<MappedStudent | null>(null);
   const [viewMode, setViewMode] = useState<'list' | 'by-class'>('list');
   const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
   const [isDiscardModalOpen, setIsDiscardModalOpen] = useState(false);
@@ -62,35 +75,185 @@ const StudentsList: React.FC = () => {
 
   const [formData, setFormData] = useState(initialStudentFormData);
   const [formSnapshot, setFormSnapshot] = useState(initialStudentFormData);
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
 
   const [searchParams] = useSearchParams();
 
   const isFormDirty = JSON.stringify(formData) !== JSON.stringify(formSnapshot);
 
-  const loadData = async () => {
-    if (!etablissementId) return;
-    try {
-      const [studentData, classData] = await Promise.all([
-        studentsService.list(etablissementId),
-        classesService.list(etablissementId),
-      ]);
-      setStudents(studentData);
-      setClasses(classData);
-      setError(null);
-    } catch (err: any) {
-      setError(err.message || 'Failed to load');
-    } finally {
-      setLoading(false);
-    }
+  const clearFieldError = (field: string) => {
+    setFormErrors(prev => {
+      if (!prev[field]) return prev;
+      const next = { ...prev };
+      delete next[field];
+      return next;
+    });
   };
 
   useEffect(() => {
-    loadData();
+    if (Object.keys(formErrors).length > 0) {
+      const firstErrorField = Object.keys(formErrors)[0];
+      const el = document.getElementById(`field-${firstErrorField}`);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }
+  }, [formErrors]);
+
+  const loadData = useCallback(async () => {
+    if (!etablissementId) return;
+    try {
+      const [studentData, apiClasses] = await Promise.all([
+        studentsService.list(etablissementId),
+        classesService.list(etablissementId).catch(() => []),
+      ]);
+      const storedClasses = getItem<ClassRow[]>(`classes_${etablissementId ?? 'default'}`, []);
+      setStudents(studentData);
+      setClasses(apiClasses.length > 0
+        ? apiClasses
+        : (Array.isArray(storedClasses) ? storedClasses : []));
+    } catch (err) {
+      console.error(err instanceof Error ? err.message : 'Failed to load');
+    } finally {
+      setLoading(false);
+    }
   }, [etablissementId]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  const getClassTarif = (c: ClassRow): number => Number(c?.tarifAmount ?? c?.tarif_amount ?? c?.tarif ?? 0) || 0;
+
+  const getClassPeriodLabel = (c: ClassRow | null): string => {
+    if (!c) return '';
+    const labels: Record<string, string> = {
+      mensuel: 'Mensuel',
+      trimestriel: 'Trimestriel',
+      trimestrial: 'Trimestriel',
+      annuel: 'Annuel',
+      annuelle: 'Annuel',
+    };
+    const period = c.tarifPeriod || c.tarif_period || '';
+    if (period === 'custom') return c.tarifCustomLabel || 'Personnalisé';
+    return labels[period] || period || '';
+  };
+
+  const validateForm = (): Record<string, string> => {
+    const errors: Record<string, string> = {};
+
+    if (!formData.full_name.trim()) {
+      errors.full_name = 'Le nom est requis';
+    } else if (formData.full_name.trim().length < 3) {
+      errors.full_name = 'Minimum 3 caractères';
+    } else if (formData.full_name.trim().length > 100) {
+      errors.full_name = 'Maximum 100 caractères';
+    }
+
+    if (!formData.phone.trim()) {
+      errors.phone = 'Le téléphone est requis';
+    } else if (!/^0[5-7]\d{8}$/.test(formData.phone.trim())) {
+      errors.phone = 'Format invalide (ex: 06XXXXXXXX)';
+    }
+
+    if (!formData.enrollment_date) {
+      errors.enrollment_date = "La date d'inscription est requise";
+    }
+
+    if (!formData.classe_id) {
+      errors.classe_id = 'La classe est requise';
+    }
+
+    if (!formData.tuition_fee || formData.tuition_fee <= 0) {
+      errors.tuition_fee = 'Le tarif doit être > 0';
+    }
+
+    if (formData.registration_fee < 0) {
+      errors.registration_fee = 'Le montant ne peut pas être négatif';
+    }
+
+    return errors;
+  };
+
+  const getClassPeriod = (c: ClassRow | null): string => c?.tarif_period || c?.tarifPeriod || 'mensuel';
+
+  const getPeriodDueDate = (period: string): string => {
+    const due = new Date();
+    if (period === 'mensuel') due.setMonth(due.getMonth() + 1);
+    else if (period === 'trimestriel' || period === 'trimestrial') due.setMonth(due.getMonth() + 3);
+    else if (period === 'annuel' || period === 'annuelle') due.setFullYear(due.getFullYear() + 1);
+    else due.setMonth(due.getMonth() + 1);
+    return toDateInput(due);
+  };
+
+  const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+  const resolveClassId = async (classId: string): Promise<string> => {
+    if (UUID_REGEX.test(classId)) return classId;
+
+    const localClass = classes.find(c => String(c.id) === String(classId));
+    if (!localClass || !etablissementId) return classId;
+
+    const apiClasses = await classesService.list(etablissementId);
+    const existing = apiClasses.find(c => c.name === localClass.name);
+    if (existing) return existing.id;
+
+    const created = await classesService.create({
+      name: localClass.name,
+      subject: localClass.subject || '',
+      level: localClass.level || '',
+      teacher: localClass.teacher || '',
+      max_capacity: parseInt(String(localClass.capacity ?? '').split('/')[1], 10) || Number(localClass.maxCapacity) || 0,
+      tarif_amount: Number(localClass.tarifAmount) || 0,
+      tarif_period: localClass.tarifPeriod || 'mensuel',
+      color: localClass.color || '#e0f2fe',
+      etablissement_id: etablissementId,
+      status: localClass.status || 'ACTIVE',
+    });
+    return created.id;
+  };
+
+  const createTuitionPayment = async (studentId: string) => {
+    if (formData.tuition_fee_status !== 'PAID' || !formData.tuition_fee || formData.tuition_fee <= 0) return;
+    const today = toDateInput();
+    const studentClass = classes.find(c => String(c.id) === String(formData.classe_id));
+    const dueDate = getPeriodDueDate(getClassPeriod(studentClass ?? null));
+    await paymentsService.create({
+      student_id: studentId,
+      amount: formData.tuition_fee,
+      due_date: dueDate,
+      method: 'Espèces',
+      payment_category: 'TUITION',
+      status: 'PAID',
+      payment_date: today,
+      period_start_date: today,
+      period_end_date: dueDate,
+    });
+  };
+
+  const createRegistrationPayment = async (studentId: string) => {
+    if (formData.registration_fee_paid !== 'PAID' || !formData.registration_fee || formData.registration_fee <= 0) return;
+    const paymentDate = formData.enrollment_date || toDateInput();
+    await paymentsService.create({
+      student_id: studentId,
+      amount: formData.registration_fee,
+      due_date: paymentDate,
+      method: 'Espèces',
+      payment_category: 'REGISTRATION',
+      status: 'PAID',
+      payment_date: paymentDate,
+    });
+  };
 
   const handleSave = async () => {
     if (!etablissementId) return;
+    const errors = validateForm();
+    setFormErrors(errors);
+    if (Object.keys(errors).length > 0) {
+      return;
+    }
     try {
+      const resolvedClassId = await resolveClassId(formData.classe_id);
       if (editingStudent) {
         await studentsService.update(editingStudent.id, {
           full_name: formData.full_name,
@@ -102,34 +265,36 @@ const StudentsList: React.FC = () => {
           registration_fee_paid: formData.registration_fee_paid,
           email: formData.email,
           notes: formData.notes,
-          classe_id: formData.classe_id,
+          classe_id: resolvedClassId,
           enrollment_date: formData.enrollment_date,
         });
+        if (formData.tuition_fee_status === 'PAID' && editingStudent.tuition_fee_status !== 'PAID') {
+          await createTuitionPayment(editingStudent.id);
+        }
+        if (formData.registration_fee_paid === 'PAID' && editingStudent.registration_fee_paid !== 'PAID') {
+          await createRegistrationPayment(editingStudent.id);
+        }
       } else {
         const newStudent = await studentsService.create({
           full_name: formData.full_name,
           phone: formData.phone,
-          classe_id: formData.classe_id,
+          classe_id: resolvedClassId,
           enrollment_date: formData.enrollment_date,
+          status: formData.status,
           tuition_fee: formData.tuition_fee || 0,
+          tuition_fee_status: formData.tuition_fee_status,
           registration_fee: formData.registration_fee || 0,
+          registration_fee_paid: formData.registration_fee_paid,
           notes: formData.notes,
           email: formData.email,
-          etablissement_id: etablissementId,
         });
-        if (formData.tuition_fee_status === 'PAID') {
-          await paymentsService.create({
-            student_id: newStudent.id,
-            amount: formData.tuition_fee,
-            due_date: new Date().toISOString().split('T')[0],
-            method: 'Espèces',
-          });
-        }
+        await createTuitionPayment(newStudent.id);
+        await createRegistrationPayment(newStudent.id);
       }
       await loadData();
       closeStudentModal();
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err) {
+      console.error(err instanceof Error ? err.message : err);
     }
   };
 
@@ -143,15 +308,15 @@ const StudentsList: React.FC = () => {
       if (archiveTarget === 'batch') {
         if (!selectedIds) return;
         for (const sid of selectedIds) {
-          await studentsService.softDelete(sid as string);
+          await studentsService.softDelete(sid);
         }
         clearSelection();
       } else if (archiveTarget) {
         await studentsService.softDelete(archiveTarget);
       }
       await loadData();
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err) {
+      console.error(err instanceof Error ? err.message : err);
     }
     setIsConfirmModalOpen(false);
     setArchiveTarget(null);
@@ -168,8 +333,9 @@ const StudentsList: React.FC = () => {
         await studentsService.remove(deleteTarget);
       }
       await loadData();
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err) {
+      console.error(err instanceof Error ? err.message : err);
+      alert(err instanceof Error ? err.message : 'Impossible de supprimer cet étudiant.');
     }
     setIsDeleteModalOpen(false);
     setDeleteTarget(null);
@@ -184,6 +350,7 @@ const StudentsList: React.FC = () => {
     setIsModalOpen(false);
     setIsDiscardModalOpen(false);
     setEditingStudent(null);
+    setFormErrors({});
   };
 
   const requestCloseStudentModal = () => {
@@ -194,8 +361,9 @@ const StudentsList: React.FC = () => {
     closeStudentModal();
   };
 
-  const handleOpenModal = (student: any = null) => {
+  const handleOpenModal = (student: MappedStudent | null = null) => {
     setIsDiscardModalOpen(false);
+    setFormErrors({});
     if (student) {
       setEditingStudent(student);
       const nextForm = {
@@ -241,7 +409,7 @@ const StudentsList: React.FC = () => {
     return matchesSearch && matchesFilter;
   });
 
-  const columns: Column<any>[] = [
+  const columns: Column<MappedStudent>[] = [
     { header: 'Nom complet', key: 'full_name' },
     { header: 'Téléphone', key: 'phone' },
     { 
@@ -291,7 +459,6 @@ const StudentsList: React.FC = () => {
           <p style={{ color: 'var(--color-text-secondary)', fontSize: '1rem' }}>
             {loading ? 'Chargement...' : `${filteredStudents.length} étudiants enregistrés`}
           </p>
-          {error && <p style={{ color: 'red', fontSize: '0.85rem' }}>{error}</p>}
 
           <div style={{
             display: 'flex',
@@ -339,7 +506,7 @@ const StudentsList: React.FC = () => {
 
         <div style={{
           display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-          backgroundColor: 'var(--color-white)', padding: '16px', borderRadius: '12px',
+          backgroundColor: 'var(--color-white)', padding: '16px', borderRadius: '0px',
           boxShadow: 'var(--shadow-sm)', border: '1px solid var(--color-border)', height: '68px', boxSizing: 'border-box'
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flex: 1 }}>
@@ -404,7 +571,7 @@ const StudentsList: React.FC = () => {
               data={filteredStudents.filter(s => s.status !== 'DROPPED')}
               selectable
               selectedIds={selectedIds}
-              onSelectionChange={(ids) => setSelectedIds(ids as number[])}
+              onSelectionChange={(ids) => setSelectedIds(ids as string[])}
             />
             {students.filter(s => s.status === 'DROPPED').length > 0 && (
               <div style={{ marginTop: '16px', display: 'flex', flexDirection: 'column', gap: '24px' }}>
@@ -439,7 +606,7 @@ const StudentsList: React.FC = () => {
                 <DataTable
                   columns={columns.map(col => col.key === 'actions' ? ({
                     ...col,
-                    render: (row: any) => (
+                    render: (row: MappedStudent) => (
                       <div style={{ display: 'flex', gap: '16px' }}>
                         <button onClick={() => handleRestore(row.id)} style={{
                           padding: '6px 12px', borderRadius: '8px', border: '1px solid var(--color-primary)',
@@ -453,7 +620,7 @@ const StudentsList: React.FC = () => {
                         }}><Trash2 size={12} /></button>
                       </div>
                     )
-                  } as Column<any>) : col)}
+                  } as Column<MappedStudent>) : col)}
                   data={students.filter(s => s.status === 'DROPPED' && (!searchTerm || s.full_name.toLowerCase().includes(searchTerm.toLowerCase()) || s.phone.includes(searchTerm)))}
                   selectable={false}
                   hideHeader
@@ -465,7 +632,7 @@ const StudentsList: React.FC = () => {
           </div>
         ) : (
           <StudentsByClass
-            students={filteredStudents}
+            students={filteredStudents.filter(s => s.status !== 'DROPPED')}
             onEdit={handleOpenModal}
             onArchive={(id) => handleOpenConfirmModal(id)}
             classes={classes}
@@ -480,25 +647,25 @@ const StudentsList: React.FC = () => {
         width="700px"
         footer={<PrimaryButton label="Enregistrer" onClick={handleSave} />}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', margin: '16px 0' }}>
-          <span style={{ fontSize: 'var(--text-base)', fontWeight: 600, color: 'var(--color-text)', whiteSpace: 'nowrap' }}>Informations personnelles</span>
-          <hr style={{ flex: 1, border: 'none', borderTop: '1px solid var(--color-text)' }} />
-        </div>
         <FormInput
           label="Nom complet"
           value={formData.full_name}
-          onChange={(e) => setFormData({ ...formData, full_name: e.target.value })}
+          onChange={(e) => { setFormData({ ...formData, full_name: e.target.value }); clearFieldError('full_name'); }}
           required
           placeholder="ex: Karim Idrissi"
+          inputId="field-full_name"
+          error={formErrors.full_name}
         />
         <div style={{ display: 'flex', gap: '16px' }}>
           <div style={{ flex: '0.9' }}>
             <FormInput label="Téléphone" value={formData.phone}
-              onChange={(e) => setFormData({ ...formData, phone: e.target.value })} required placeholder="06XXXXXXXX" />
+              onChange={(e) => { setFormData({ ...formData, phone: e.target.value }); clearFieldError('phone'); }} required placeholder="06XXXXXXXX"
+              inputId="field-phone" error={formErrors.phone} />
           </div>
           <div style={{ flex: '1.1' }}>
             <FormInput label="Date d'inscription" type="date" value={formData.enrollment_date}
-              onChange={(e) => setFormData({ ...formData, enrollment_date: e.target.value })} required />
+              onChange={(e) => { setFormData({ ...formData, enrollment_date: e.target.value }); clearFieldError('enrollment_date'); }} required
+              inputId="field-enrollment_date" error={formErrors.enrollment_date} />
           </div>
         </div>
         <FormInput
@@ -520,10 +687,11 @@ const StudentsList: React.FC = () => {
           required
         />
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', margin: '32px 0 16px' }}>
-          <span style={{ fontSize: 'var(--text-base)', fontWeight: 600, color: 'var(--color-text)', whiteSpace: 'nowrap' }}>Inscription</span>
-          <hr style={{ flex: 1, border: 'none', borderTop: '1px solid var(--color-text)' }} />
-        </div>
+        <div style={{ borderTop: '1px solid #d1d5db', marginTop: '24px', paddingTop: '18px' }}>
+          <p style={{ fontSize: 'var(--text-xs)', fontWeight: 700, color: 'var(--color-text)', marginBottom: '12px', textTransform: 'uppercase' }}>
+            Inscription
+          </p>
+          </div>
         <div style={{ display: 'flex', gap: '16px' }}>
           <div style={{ flex: '1.2' }}>
             <FormInput
@@ -532,22 +700,28 @@ const StudentsList: React.FC = () => {
               value={formData.classe_id}
               onChange={(e) => {
                 const val = e.target.value;
-                const c = classes.find(x => x.id === val);
-                const fee = c ? (c.tarif_amount || 0) : 0;
+                const c = classes.find(x => String(x.id) === val);
+                const fee = c ? getClassTarif(c) : 0;
                 setFormData({ ...formData, classe_id: val, tuition_fee: fee });
+                clearFieldError('classe_id');
+                clearFieldError('tuition_fee');
               }}
               placeholder={formData.classe_id ? '' : 'Choisir une classe'}
               options={classes.filter(c => c.status === 'ACTIVE').map(c => ({ label: c.name, value: c.id }))}
               required
+              inputId="field-classe_id"
+              error={formErrors.classe_id}
             />
           </div>
           <div style={{ flex: '1.2' }}>
             <FormInput
-              label={`Tarif - ${formData.tuition_fee} MAD`}
+              label={`Tarif - ${formData.tuition_fee} MAD / ${getClassPeriodLabel(classes.find(x => String(x.id) === formData.classe_id) ?? null)}`}
               type="number"
               value={formData.tuition_fee}
-              onChange={(e) => setFormData({ ...formData, tuition_fee: parseInt(e.target.value) || 0 })}
+              onChange={(e) => { setFormData({ ...formData, tuition_fee: parseInt(e.target.value) || 0 }); clearFieldError('tuition_fee'); }}
               min={0}
+              inputId="field-tuition_fee"
+              error={formErrors.tuition_fee}
             />
           </div>
         </div>
@@ -568,9 +742,11 @@ const StudentsList: React.FC = () => {
             label="Frais d'inscription (MAD)"
             type="number"
             value={formData.registration_fee}
-            onChange={(e) => setFormData({ ...formData, registration_fee: parseInt(e.target.value) || 0 })}
+            onChange={(e) => { setFormData({ ...formData, registration_fee: parseInt(e.target.value) || 0 }); clearFieldError('registration_fee'); }}
             min={0}
             placeholder="Optionnel"
+            inputId="field-registration_fee"
+            error={formErrors.registration_fee}
           />
         </div>
         <label style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', fontSize: 'var(--text-sm)', color: 'var(--color-text-secondary)', cursor: 'pointer', marginTop: '12px', marginLeft: '8px' }}>

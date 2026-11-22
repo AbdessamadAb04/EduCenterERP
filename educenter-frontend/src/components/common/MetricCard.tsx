@@ -9,9 +9,10 @@ interface MetricCardProps {
   onClick?: () => void;
   icon?: React.ReactNode;
   solid?: boolean;
+  borderRadius?: string;
 }
 
-const MetricCard: React.FC<MetricCardProps> = ({ label, value, sub, color = 'default', active, onClick, icon, solid }) => {
+const MetricCard: React.FC<MetricCardProps> = ({ label, value, sub, color = 'default', active, onClick, icon, solid, borderRadius = '8px' }) => {
   const getBrandColor = () => {
     switch (color) {
       case 'success': return 'var(--color-primary)';
@@ -44,7 +45,7 @@ const MetricCard: React.FC<MetricCardProps> = ({ label, value, sub, color = 'def
       style={{
         backgroundColor: solid ? getBrandColor() : 'var(--color-white)',
         padding: '24px',
-        borderRadius: '12px',
+        borderRadius: borderRadius,
         boxShadow: active 
           ? `0 0 0 1px ${getBrandColor()}, var(--shadow-md)` 
           : solid ? `0 2px 8px ${getBrandColor()}33` : 'var(--shadow-sm)',

@@ -3,44 +3,45 @@ package com.educentererp.module.classe;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/classes")
 @RequiredArgsConstructor
-@CrossOrigin("*")
 public class ClasseController {
 
     private final ClasseService classeService;
 
     @GetMapping
-    public List<Classe> getAllClasses() {
-        return classeService.getAllClasses();
+    public List<ClassResponse> list(@RequestParam(name = "etablissement_id", required = false) Long etablissementId) {
+        return classeService.list(etablissementId);
     }
 
     @GetMapping("/{id}")
-    public ResponseEntity<Classe> getClasseById(@PathVariable Long id) {
-        return ResponseEntity.ok(classeService.getClasseById(id));
+    public ClassResponse get(@PathVariable Long id) {
+        return classeService.get(id);
     }
 
     @PostMapping
-    public ResponseEntity<Classe> createClasse(@RequestBody Classe classe) {
-        return ResponseEntity.ok(classeService.createClasse(classe));
+    public ClassResponse create(@RequestBody Map<String, Object> body) {
+        return classeService.create(body);
     }
 
     @PutMapping("/{id}")
-    public ResponseEntity<Classe> updateClasse(@PathVariable Long id, @RequestBody Classe classe) {
-        return ResponseEntity.ok(classeService.updateClasse(id, classe));
+    public ClassResponse update(@PathVariable Long id, @RequestBody Map<String, Object> body) {
+        return classeService.update(id, body);
+    }
+
+    @PutMapping("/{id}/archive")
+    public ClassResponse archive(@PathVariable Long id) {
+        return classeService.update(id, Map.of("status", "ARCHIVED"));
     }
 
     @DeleteMapping("/{id}")
-    public ResponseEntity<Void> deleteClasse(@PathVariable Long id) {
-        classeService.deleteClasse(id);
+    public ResponseEntity<Void> delete(@PathVariable Long id) {
+        classeService.delete(id);
         return ResponseEntity.noContent().build();
-    }
-
-    @GetMapping("/active")
-    public List<Classe> getActiveClasses() {
-        return classeService.getActiveClasses();
     }
 }

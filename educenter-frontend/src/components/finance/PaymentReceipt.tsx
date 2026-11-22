@@ -221,7 +221,7 @@ const formatCurrency = (val: number) => {
 
 // --- PDF DOCUMENT ---
 export const PaymentReceipt: React.FC<PaymentReceiptProps> = ({
-  centerName = "EDUCENTER",
+  centerName = "CENTRIA",
   centerAddress = "",
   centerPhone = "",
   centerEmail = "",
@@ -322,7 +322,7 @@ export const PaymentReceipt: React.FC<PaymentReceiptProps> = ({
       {/* Footer */}
       <View style={styles.footer}>
         <View style={styles.footerTextContainer}>
-          <Text style={styles.footerLine}>Ce reçu a été généré par EduCenter v0.1</Text>
+          <Text style={styles.footerLine}>Ce reçu a été généré par Centria v0.1</Text>
           <Text style={styles.footerLine}>Gardez ce document comme preuve de paiement.</Text>
         </View>
         <View style={styles.signatureBox}>

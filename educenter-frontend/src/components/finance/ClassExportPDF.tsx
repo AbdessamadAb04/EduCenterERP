@@ -16,7 +16,7 @@ Font.register({
 
 export interface ClassExportProps {
   classes: {
-    id: number;
+    id: string;
     name: string;
     subject: string;
     level: string;
@@ -113,7 +113,7 @@ export const ClassExportPDF: React.FC<ClassExportProps> = ({ classes, title = "L
         <View style={styles.header}>
           <View style={styles.titleContainer}>
             <Text style={styles.title}>{title}</Text>
-            <Text style={styles.subtitle}>EduCenter ERP - Système de Gestion Scolaire</Text>
+            <Text style={styles.subtitle}>Centria ERP - Système de Gestion Scolaire</Text>
           </View>
           <View style={{ textAlign: 'right' }}>
             <Text style={styles.date}>Date d'exportation: {new Date().toLocaleDateString('fr-FR')}</Text>
@@ -153,7 +153,7 @@ export const ClassExportPDF: React.FC<ClassExportProps> = ({ classes, title = "L
         {/* Footer */}
         <View style={{ position: 'absolute', bottom: 30, left: 30, right: 30, borderTop: '1pt solid #eee', paddingTop: 10 }}>
           <Text style={{ fontSize: 8, color: '#999', textAlign: 'center' }}>
-            © {new Date().getFullYear()} EduCenter ERP. Tous droits réservés.
+            © {new Date().getFullYear()} Centria ERP. Tous droits réservés.
           </Text>
         </View>
       </Page>

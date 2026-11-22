@@ -7,7 +7,6 @@ import FinanceManager from './pages/finance/FinanceManager';
 import SettingsPage from './pages/settings/Settings';
 import SupportPage from './pages/support/Support';
 import MonProfil from './pages/compte/MonProfil';
-import MonCompte from './pages/compte/MonCompte';
 import MonEtablissement from './pages/compte/MonEtablissement';
 import MesEtablissements from './pages/compte/MesEtablissements';
 import LoginPage from './pages/system/LoginPage';

@@ -16,8 +16,9 @@ Font.register({
 
 export interface StudentExportProps {
   students: {
-    id: number;
-    name: string;
+    id: string;
+    full_name?: string;
+    name?: string;
   }[];
   title?: string;
   isAbsenceList?: boolean;
@@ -122,7 +123,7 @@ export const StudentExportPDF: React.FC<StudentExportProps> = ({ students, title
         <View style={styles.header}>
           <View style={styles.titleContainer}>
             <Text style={styles.title}>{title}</Text>
-            <Text style={styles.subtitle}>EduCenter ERP - Système de Gestion Scolaire</Text>
+            <Text style={styles.subtitle}>Centria ERP - Système de Gestion Scolaire</Text>
           </View>
           <Text style={styles.date}>Date: {currentDate}</Text>
         </View>
@@ -158,7 +159,7 @@ export const StudentExportPDF: React.FC<StudentExportProps> = ({ students, title
         </View>
 
         <View style={styles.footer}>
-          <Text>Ce document a été généré automatiquement par EduCenter ERP.</Text>
+          <Text>Ce document a été généré automatiquement par Centria ERP.</Text>
         </View>
       </Page>
     </Document>

@@ -9,7 +9,7 @@ interface FormInputProps {
   error?: string;
   required?: boolean;
   optional?: boolean;
-  options?: { label: string; value: string }[];
+  options?: { label: string; value: string; disabled?: boolean }[];
   placeholder?: string;
   className?: string;
   inputId?: string;
@@ -41,7 +41,6 @@ const FormInput: React.FC<FormInputProps> = ({
   inputMode,
   disabled = false,
   readOnly = false,
-  editMode = false,
 }) => {
   const defaultBorder = error ? 'var(--color-danger)' : 'var(--color-border)';
 
@@ -93,7 +92,7 @@ const FormInput: React.FC<FormInputProps> = ({
         >
           {placeholder && <option value="" disabled>{placeholder}</option>}
           {options?.map((opt) => (
-            <option key={opt.value} value={opt.value}>
+            <option key={opt.value} value={opt.value} disabled={opt.disabled}>
               {opt.label}
             </option>
           ))}
@@ -101,9 +100,9 @@ const FormInput: React.FC<FormInputProps> = ({
       ) : type === 'textarea' ? (
         <textarea
           value={value}
-          onChange={onChange as any}
-          onFocus={onFocus as any}
-          onBlur={handleBlur as any}
+          onChange={onChange}
+          onFocus={onFocus}
+          onBlur={handleBlur}
           placeholder={placeholder}
           style={{ ...inputStyle, minHeight: '80px', resize: 'vertical' }}
           required={required}

@@ -1,20 +1,6 @@
 import React from "react";
 
-const styleId = "empty-data-overlay-keyframes";
-
 const EmptyDataOverlay: React.FC<{ topOffset?: string }> = ({ topOffset }) => {
-  if (!document.getElementById(styleId)) {
-    const style = document.createElement("style");
-    style.id = styleId;
-    style.textContent = `
-      @keyframes emptyFade {
-        0% { opacity: 0; }
-        100% { opacity: 1; }
-      }
-    `;
-    document.head.appendChild(style);
-  }
-
   return (
     <div style={{
       position: "absolute",
@@ -26,8 +12,7 @@ const EmptyDataOverlay: React.FC<{ topOffset?: string }> = ({ topOffset }) => {
       alignItems: "center",
       justifyContent: "center",
       zIndex: 2,
-      pointerEvents: "none",
-      animation: "emptyFade 0.3s ease-out forwards"
+      pointerEvents: "none"
     }}>
       <div style={{
         backgroundColor: "rgba(255,255,255,0.85)",

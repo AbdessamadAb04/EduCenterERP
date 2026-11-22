@@ -41,7 +41,7 @@ const SupportPage: React.FC = () => {
   const contactOptions = [
     {
       label: 'Assistance Technique',
-      value: 'support@educenter.com',
+      value: 'support@centria.ma',
       icon: <Mail size={16} />,
       type: 'email'
     },
@@ -81,7 +81,7 @@ const SupportPage: React.FC = () => {
           Aide & Support
         </h2>
         <p style={{ color: 'var(--color-text-secondary)', fontSize: 'var(--text-base)' }}>
-          Trouvez des réponses à vos questions et obtenez de l'aide technique pour EduCenter ERP.
+          Trouvez des réponses à vos questions et obtenez de l'aide technique pour Centria ERP.
         </p>
       </div>
 

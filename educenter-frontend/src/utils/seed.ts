@@ -1,5 +1,4 @@
-import { supabase } from '../lib/supabaseClient';
-import { classesService, scheduleService } from '../api/supabaseService';
+import { classesService, scheduleService } from '../api/apiService';
 
 type LegacyClass = {
   id?: number | string;
@@ -44,18 +43,13 @@ const removeItem = (key: string) => {
   try {
     localStorage.removeItem(key);
   } catch {
-    // ignore storage errors
+    return;
   }
 };
 
 async function doSeed(etablissementId: string): Promise<{ seeded: boolean }> {
-  const { data: existing, error } = await supabase
-    .from('classes')
-    .select('id')
-    .eq('etablissement_id', etablissementId)
-    .limit(1);
-  if (error) throw error;
-  if ((existing || []).length > 0) return { seeded: false };
+  const existing = await classesService.list(etablissementId);
+  if (existing.length > 0) return { seeded: false };
 
   const legacyKey = `classes_${etablissementId}`;
   const legacyScheduleKey = `scheduleEvents_${etablissementId}`;

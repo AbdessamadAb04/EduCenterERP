@@ -2,8 +2,8 @@ import React, { createContext, useContext, useState } from 'react';
 import type { ReactNode } from 'react';
 
 interface SelectionContextType {
-  selectedIds: number[];
-  setSelectedIds: (ids: number[]) => void;
+  selectedIds: string[];
+  setSelectedIds: (ids: string[]) => void;
   showExportModal: boolean;
   setShowExportModal: (show: boolean) => void;
   clearSelection: () => void;
@@ -12,7 +12,7 @@ interface SelectionContextType {
 const ClassSelectionContext = createContext<SelectionContextType | undefined>(undefined);
 
 export const ClassSelectionProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [selectedIds, setSelectedIds] = useState<number[]>([]);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [showExportModal, setShowExportModal] = useState(false);
 
   const clearSelection = () => {
@@ -33,6 +33,7 @@ export const ClassSelectionProvider: React.FC<{ children: ReactNode }> = ({ chil
   );
 };
 
+// eslint-disable-next-line react-refresh/only-export-components
 export const useClassSelection = () => {
   const context = useContext(ClassSelectionContext);
   if (context === undefined) {

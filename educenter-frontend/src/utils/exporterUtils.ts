@@ -9,7 +9,7 @@ import React from 'react';
 export const downloadPDF = async (pdfElement: React.ReactElement<DocumentProps>, fileName: string) => {
   try {
     // Generate the PDF blob
-    // Cast to any to bypass strict DocumentProps check as our components are wrappers
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- bypass strict DocumentProps check as our components are wrappers
     const blob = await pdf(pdfElement as any).toBlob();
     
     // Create a download link

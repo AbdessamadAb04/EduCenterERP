@@ -43,7 +43,7 @@ const LandingPage: React.FC = () => {
             margin: 0,
             textAlign: 'center',
           }}>
-            EduCenter
+            Centria
           </h1>
           <p style={{
             fontSize: '1rem',
@@ -125,7 +125,7 @@ const LandingPage: React.FC = () => {
           margin: 0,
           textAlign: 'center',
         }}>
-          EduCenter ERP v0.1
+          Centria ERP v0.1
         </p>
 
         <div style={{

@@ -16,7 +16,7 @@ const WhatsAppButton: React.FC<WhatsAppButtonProps> = ({
 }) => {
   const sendMessage = () => {
     // Message template (French) from plan
-    const message = `Bonjour ${studentName}, nous vous rappelons que votre paiement de ${amount} MAD était dû le ${dueDate}. Merci de régulariser votre situation. Centre EduCenter.`;
+    const message = `Bonjour ${studentName}, nous vous rappelons que votre paiement de ${amount} MAD était dû le ${dueDate}. Merci de régulariser votre situation. Centre Centria.`;
     
     // Clean phone number (remove spaces, etc.) - assuming Moroccan format or similar
     const cleanPhone = phone.replace(/\s+/g, '').replace(/^0/, '212');

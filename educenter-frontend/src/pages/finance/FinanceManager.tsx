@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
-import { Plus, Download, Printer, Archive, Edit2, Trash2, Calendar, X, ChevronLeft, ChevronRight, List } from 'lucide-react';
+import { Plus, Download, Printer, Archive, Edit2, Trash2, Calendar, X, ChevronLeft, ChevronRight, List, CheckCircle } from 'lucide-react';
 import DataTable, { type Column } from '../../components/common/DataTable';
 import StatusBadge from '../../components/common/StatusBadge';
 import MetricCard from '../../components/common/MetricCard';
@@ -16,8 +16,22 @@ import { downloadPDF } from '../../utils/exporterUtils';
 import ArchiveInfoTooltip from '../../components/common/ArchiveInfoTooltip';
 import UnsavedChangesModal from '../../components/common/UnsavedChangesModal';
 import { usePaymentData as useSupabasePaymentData } from '../../context/PaymentDataContext';
-import { studentsService } from '../../api/supabaseService';
-import { classesService } from '../../api/supabaseService';
+import type { PaymentRecord } from '../../context/PaymentDataContext';
+import { studentsService } from '../../api/apiService';
+import { classesService } from '../../api/apiService';
+import type { MappedStudent } from '../../api/apiService';
+import { toDateInput, formatMAD } from '../../utils/date';
+
+type StudentInfo = MappedStudent & { name?: string; class?: string };
+
+type ClassInfo = {
+  id: string;
+  name: string;
+  tarif_amount?: number;
+  tarifAmount?: number;
+  tarif_period?: string;
+  tarifPeriod?: string;
+};
 
 const monthsFR = ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin', 'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre'];
 
@@ -25,29 +39,46 @@ const FinanceManager: React.FC = () => {
   const { etablissementId } = useParams<{ etablissementId: string }>();
   const [searchParams] = useSearchParams();
   const base = `/mes-etablissements/etablissement/${etablissementId}`;
-  const { payments, loading, handleCreatePayment: ctxCreatePayment, handleUpdatePayment: ctxUpdatePayment, handleDeletePayment: ctxDeletePayment, handleMarkAsPaid: ctxMarkAsPaid, handleArchivePayment: ctxArchivePayment, refreshPayments } = useSupabasePaymentData();
+  const { payments, handleCreatePayment: ctxCreatePayment, handleUpdatePayment: ctxUpdatePayment, handleDeletePayment: ctxDeletePayment, handleMarkAsPaid: ctxMarkAsPaid, handleArchivePayment: ctxArchivePayment } = useSupabasePaymentData();
   const [searchTerm, setSearchTerm] = useState('');
   const [activeFilter, setActiveFilter] = useState('Tous');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isMarkPaidModalOpen, setIsMarkPaidModalOpen] = useState(false);
-  const [selectedPayment, setSelectedPayment] = useState<any>(null);
+
+  const [selectedPayment, setSelectedPayment] = useState<PaymentRecord | null>(null);
   const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
-  const [deleteTarget, setDeleteTarget] = useState<number | 'all' | null>(null);
-  const [archiveTarget, setArchiveTarget] = useState<number | 'batch' | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<string | 'all' | null>(null);
+  const [archiveTarget, setArchiveTarget] = useState<string | 'batch' | null>(null);
   const [selectedMonth, setSelectedMonth] = useState<string | null>(null);
   const [showMonthPicker, setShowMonthPicker] = useState(false);
   const [pickerYear, setPickerYear] = useState(new Date().getFullYear());
   const [hoverLeft, setHoverLeft] = useState(false);
   const [hoverRight, setHoverRight] = useState(false);
   const [visibleCount, setVisibleCount] = useState(10);
-  const [errorState, setErrorState] = useState<string | null>(null);
   const [isDiscardChangesModalOpen, setIsDiscardChangesModalOpen] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+  const [editFormErrors, setEditFormErrors] = useState<Record<string, string>>({});
+  const clearFieldError = (field: string) => {
+    setFormErrors(prev => {
+      const next = { ...prev };
+      delete next[field];
+      return next;
+    });
+  };
+  const clearEditFieldError = (field: string) => {
+    setEditFormErrors(prev => {
+      const next = { ...prev };
+      delete next[field];
+      return next;
+    });
+  };
   const scrollRef = React.useRef<HTMLDivElement>(null);
   const monthPickerRef = React.useRef<HTMLDivElement>(null);
   const monthCardRefs = React.useRef<Record<string, HTMLDivElement | null>>({});
-  const formSnapshot = React.useRef(JSON.stringify({ student: '', amount: 0, dueDate: new Date().toISOString().split('T')[0], method: 'Espèces' }));
+  const [formSnapshot, setFormSnapshot] = useState(JSON.stringify({ studentId: '', student: '', amount: 0, dueDate: toDateInput(), method: 'Espèces', paymentCategory: 'TUITION', notes: '', isPaid: false }));
 
   const { selectedPaymentIds, setSelectedPaymentIds, showReceiptModal, setShowReceiptModal, clearSelection } = usePaymentSelection();
 
@@ -55,30 +86,37 @@ const FinanceManager: React.FC = () => {
   const MONTH_GAP = 16;
 
   const [formData, setFormData] = useState({
+    studentId: '',
     student: '',
     amount: 0,
-    dueDate: new Date().toISOString().split('T')[0],
+    dueDate: toDateInput(),
     method: 'Espèces',
+    paymentCategory: 'TUITION',
+    notes: '',
+    isPaid: false,
   });
 
   const [editFormData, setEditFormData] = useState({
+    studentId: '',
     student: '',
     amount: 0,
     dueDate: '',
     method: 'Espèces',
+    paymentCategory: 'TUITION',
+    notes: '',
+    periodStartDate: '',
+    periodEndDate: '',
+    isPaid: false,
   });
 
-  const [markPaidData, setMarkPaidData] = useState({
-    paymentDate: new Date().toISOString().split('T')[0],
-    method: 'Espèces'
-  });
+
 
   const [toleranceDays, setToleranceDays] = useState(7);
   const [periodLabel, setPeriodLabel] = useState('');
   const [periodStartDate, setPeriodStartDate] = useState('');
   const [periodEndDate, setPeriodEndDate] = useState('');
 
-  const isFormDirty = JSON.stringify(formData) !== formSnapshot.current;
+  const isFormDirty = JSON.stringify(formData) !== formSnapshot;
 
   const showMonthNav = () => {
     const el = scrollRef.current;
@@ -135,6 +173,12 @@ const FinanceManager: React.FC = () => {
   }, [payments]);
 
   useEffect(() => {
+    if (selectedMonth && !monthOptions.some(m => m.key === selectedMonth)) {
+      setSelectedMonth(null);
+    }
+  }, [selectedMonth, monthOptions]);
+
+  useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
     const onScroll = () => {
@@ -157,13 +201,13 @@ const FinanceManager: React.FC = () => {
   }, []);
 
   const handleOpenPaymentModal = () => {
-    const emptyForm = { student: '', amount: 0, dueDate: new Date().toISOString().split('T')[0], method: 'Espèces' };
+    const emptyForm = { studentId: '', student: '', amount: 0, dueDate: toDateInput(), method: 'Espèces', paymentCategory: 'TUITION', notes: '', isPaid: false };
     if (isFormDirty) {
       setIsDiscardChangesModalOpen(true);
       return;
     }
     setFormData(emptyForm);
-    formSnapshot.current = JSON.stringify(emptyForm);
+    setFormSnapshot(JSON.stringify(emptyForm));
     setIsModalOpen(true);
   };
 
@@ -172,13 +216,16 @@ const FinanceManager: React.FC = () => {
       handleOpenPaymentModal();
       window.history.replaceState(null, '', `${base}/finance`);
     }
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams, base]);
 
   const closePaymentModal = () => {
     setIsModalOpen(false);
     setIsEditModalOpen(false);
     setIsDiscardChangesModalOpen(false);
     resetPaymentForm();
+    setFormErrors({});
+    setEditFormErrors({});
   };
 
   const requestCloseAddPaymentModal = () => {
@@ -190,18 +237,62 @@ const FinanceManager: React.FC = () => {
   };
 
   const resetPaymentForm = () => {
-    const emptyForm = { student: '', amount: 0, dueDate: new Date().toISOString().split('T')[0], method: 'Espèces' };
+    const emptyForm = { studentId: '', student: '', amount: 0, dueDate: toDateInput(), method: 'Espèces', paymentCategory: 'TUITION', notes: '', isPaid: false };
     setFormData(emptyForm);
-    formSnapshot.current = JSON.stringify(emptyForm);
+    setFormSnapshot(JSON.stringify(emptyForm));
     setToleranceDays(7);
     setPeriodLabel('');
     setPeriodStartDate('');
     setPeriodEndDate('');
+    setFormErrors({});
+  };
+
+  const validateForm = (): Record<string, string> => {
+    const errors: Record<string, string> = {};
+    if (!formData.studentId || !formData.student) {
+      errors.student = 'Veuillez sélectionner un étudiant';
+    }
+    if (!formData.amount || formData.amount <= 0) {
+      errors.amount = 'Le montant doit être supérieur à 0';
+    }
+    if (!formData.dueDate) {
+      errors.dueDate = "La date d'échéance est requise";
+    }
+    if (!formData.paymentCategory) {
+      errors.paymentCategory = 'La catégorie est requise';
+    }
+    if (!formData.method) {
+      errors.method = 'La méthode de paiement est requise';
+    }
+    return errors;
+  };
+
+  const validateEditForm = (): Record<string, string> => {
+    const errors: Record<string, string> = {};
+    if (!editFormData.studentId || !editFormData.student) {
+      errors.student = 'Veuillez sélectionner un étudiant';
+    }
+    if (!editFormData.amount || editFormData.amount <= 0) {
+      errors.amount = 'Le montant doit être supérieur à 0';
+    }
+    if (!editFormData.dueDate) {
+      errors.dueDate = "La date d'échéance est requise";
+    }
+    if (!editFormData.paymentCategory) {
+      errors.paymentCategory = 'La catégorie est requise';
+    }
+    if (!editFormData.method) {
+      errors.method = 'La méthode de paiement est requise';
+    }
+    return errors;
   };
 
   const PAYMENT_METHOD_OPTIONS = [
     { label: 'Espèces', value: 'Espèces' },
+    { label: 'CIH', value: 'CIH' },
+    { label: 'Attijari', value: 'Attijari' },
     { label: 'Virement', value: 'Virement' },
+    { label: 'Autre', value: 'Autre' },
   ];
 
   const periodLabels: Record<string, string> = {
@@ -210,8 +301,8 @@ const FinanceManager: React.FC = () => {
     annuelle: 'Annuel',
   };
 
-  const [allStudents, setAllStudents] = useState<any[]>([]);
-  const [allClasses, setAllClasses] = useState<any[]>([]);
+  const [allStudents, setAllStudents] = useState<StudentInfo[]>([]);
+  const [allClasses, setAllClasses] = useState<ClassInfo[]>([]);
   const toleranceByPeriod: Record<string, number> = {
     mensuel: 7,
     trimestrial: 15,
@@ -246,72 +337,190 @@ const FinanceManager: React.FC = () => {
     return {
       amount: studentClass.tarif_amount || studentClass.tarifAmount || 0,
       period,
-      dueDate: due.toISOString().split('T')[0],
+      dueDate: toDateInput(due),
       tolerance: toleranceByPeriod[period] || 7,
     };
   };
 
+  const isStudentRegistrationPaid = (studentNameOrId: string) => {
+    const student = allStudents.find(s => s.id === studentNameOrId || s.full_name === studentNameOrId || s.name === studentNameOrId);
+    if (!student) return false;
+    if (student.registration_fee_paid === 'PAID') return true;
+    const hasPaidRegPayment = payments.some(p => p.studentId === student.id && p.paymentCategory === 'REGISTRATION' && p.status === 'PAID');
+    return hasPaidRegPayment;
+  };
+
+  const getCategoryOptions = (studentNameOrId: string) => {
+    const regPaid = isStudentRegistrationPaid(studentNameOrId);
+    return [
+      { label: 'Scolarité', value: 'TUITION' },
+      { label: regPaid ? 'Inscription (Déjà payée)' : 'Inscription', value: 'REGISTRATION', disabled: regPaid },
+    ];
+  };
+
+  const handleCategoryChange = (category: string) => {
+    const student = allStudents.find(s => s.id === formData.studentId || s.full_name === formData.student || s.name === formData.student);
+    let amount = formData.amount;
+    if (student) {
+      if (category === 'TUITION') {
+        const info = getStudentTariffInfo(student.full_name || student.name || '');
+        if (info) amount = info.amount;
+      } else if (category === 'REGISTRATION') {
+        amount = student.registration_fee || 0;
+      }
+    }
+    setFormData({ ...formData, paymentCategory: category, amount });
+    clearFieldError('paymentCategory');
+    clearFieldError('amount');
+  };
+
+  const handleEditCategoryChange = (category: string) => {
+    const student = allStudents.find(s => s.id === editFormData.studentId || s.full_name === editFormData.student || s.name === editFormData.student);
+    let amount = editFormData.amount;
+    if (student) {
+      if (category === 'TUITION') {
+        const info = getStudentTariffInfo(student.full_name || student.name || '');
+        if (info) amount = info.amount;
+      } else if (category === 'REGISTRATION') {
+        amount = student.registration_fee || 0;
+      }
+    }
+    setEditFormData({ ...editFormData, paymentCategory: category, amount });
+    clearEditFieldError('paymentCategory');
+    clearEditFieldError('amount');
+  };
+
   const handleStudentChange = (studentName: string) => {
+    const student = allStudents.find(s => s.full_name === studentName || s.name === studentName);
     const info = getStudentTariffInfo(studentName);
+    const regPaid = student ? (student.registration_fee_paid === 'PAID' || payments.some(p => p.studentId === student.id && p.paymentCategory === 'REGISTRATION' && p.status === 'PAID')) : false;
+    const category = (formData.paymentCategory === 'REGISTRATION' && regPaid) ? 'TUITION' : formData.paymentCategory;
+
+    let amount = 0;
+    if (category === 'REGISTRATION' && student) {
+      amount = student.registration_fee || 0;
+    } else if (info) {
+      amount = info.amount;
+    }
+
     if (info) {
-      const today = new Date().toISOString().split('T')[0];
-      setFormData({ ...formData, student: studentName, amount: info.amount, dueDate: info.dueDate });
+      const today = toDateInput();
+      setFormData({ 
+        ...formData, 
+        studentId: student?.id || '', 
+        student: studentName, 
+        amount, 
+        dueDate: info.dueDate,
+        paymentCategory: category
+      });
       setToleranceDays(info.tolerance);
       setPeriodLabel(periodLabels[info.period] || info.period);
       setPeriodStartDate(today);
       setPeriodEndDate(info.dueDate);
     } else {
-      setFormData({ ...formData, student: studentName });
+      setFormData({ 
+        ...formData, 
+        studentId: student?.id || '', 
+        student: studentName,
+        amount: category === 'REGISTRATION' ? (student?.registration_fee || 0) : 0,
+        paymentCategory: category
+      });
       setToleranceDays(7);
       setPeriodLabel('');
       setPeriodStartDate('');
       setPeriodEndDate('');
     }
+    clearFieldError('student');
+    clearFieldError('amount');
+    clearFieldError('paymentCategory');
   };
 
   const handleSavePayment = async () => {
+    const errors = validateForm();
+    setFormErrors(errors);
+    if (Object.keys(errors).length > 0) {
+      return;
+    }
+    setSaveError(null);
     try {
       await ctxCreatePayment({
-        student_id: '',
+        student_id: formData.studentId,
         amount: formData.amount,
         due_date: formData.dueDate,
         method: formData.method,
-        payment_category: 'TUITION',
+        payment_category: formData.paymentCategory || 'TUITION',
+        status: formData.isPaid ? 'PAID' : 'PENDING',
+        payment_date: formData.isPaid ? toDateInput() : undefined,
         period_start_date: periodStartDate || undefined,
         period_end_date: periodEndDate || undefined,
-        notes: '',
+        notes: formData.notes || undefined,
       });
-    } catch (err: any) {
-      setErrorState(err.message);
+    } catch (err) {
+      console.error(err instanceof Error ? err.message : err);
+      setSaveError('Impossible d\u2019enregistrer le paiement. Veuillez réessayer.');
+      return;
     }
     resetPaymentForm();
+    setFormErrors({});
     setIsModalOpen(false);
   };
 
+  const computeDaysLate = (dueDate: string): number => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const due = new Date(dueDate + 'T00:00:00');
+    return Math.max(0, Math.floor((today.getTime() - due.getTime()) / (1000 * 60 * 60 * 24)));
+  };
+
   const handleEditPayment = async () => {
-    if (!selectedPayment) return;
-    try {
-      await ctxUpdatePayment(selectedPayment.id, {
-        method: editFormData.method,
-        due_date: editFormData.dueDate,
-        amount: editFormData.amount,
-      });
-    } catch (err: any) {
-      setErrorState(err.message);
+    const errors = validateEditForm();
+    setEditFormErrors(errors);
+    if (Object.keys(errors).length > 0) {
+      return;
     }
+    if (!selectedPayment) return;
+    setSaveError(null);
+    try {
+      const isLate = computeDaysLate(editFormData.dueDate) > 0;
+      const newStatus = editFormData.isPaid ? 'PAID' : (isLate ? 'OVERDUE' : 'PENDING');
+      const newPaymentDate = editFormData.isPaid ? (selectedPayment.paymentDate || toDateInput()) : null;
+
+      await ctxUpdatePayment(selectedPayment.id, {
+        student_id: editFormData.studentId,
+        amount: editFormData.amount,
+        due_date: editFormData.dueDate,
+        method: editFormData.method,
+        payment_category: editFormData.paymentCategory || 'TUITION',
+        status: newStatus,
+        payment_date: newPaymentDate,
+        notes: editFormData.notes || undefined,
+        period_start_date: editFormData.periodStartDate || undefined,
+        period_end_date: editFormData.periodEndDate || undefined,
+      });
+    } catch (err) {
+      console.error(err instanceof Error ? err.message : err);
+      setSaveError('Impossible de modifier le paiement. Veuillez réessayer.');
+      return;
+    }
+    setEditFormErrors({});
     setIsEditModalOpen(false);
     setSelectedPayment(null);
   };
 
   const handleMarkAsPaid = async () => {
     if (!selectedPayment) return;
+    setSaveError(null);
     try {
-      await ctxMarkAsPaid(selectedPayment.id, markPaidData.paymentDate, markPaidData.method);
-    } catch (err: any) {
-      setErrorState(err.message);
+      await ctxMarkAsPaid(selectedPayment.id, toDateInput(), selectedPayment.method || 'Espèces');
+    } catch (err) {
+      console.error(err instanceof Error ? err.message : err);
+      setSaveError('Impossible de confirmer le paiement. Veuillez réessayer.');
+      return;
     }
     setIsMarkPaidModalOpen(false);
   };
+
+
 
   const handleConfirmArchive = async () => {
     try {
@@ -323,8 +532,8 @@ const FinanceManager: React.FC = () => {
       } else if (archiveTarget !== null) {
         await ctxArchivePayment(archiveTarget);
       }
-    } catch (err: any) {
-      setErrorState(err.message);
+    } catch (err) {
+      console.error(err instanceof Error ? err.message : err);
     }
     setIsConfirmModalOpen(false);
     setArchiveTarget(null);
@@ -345,14 +554,14 @@ const FinanceManager: React.FC = () => {
       } else if (deleteTarget !== null) {
         await ctxDeletePayment(deleteTarget);
       }
-    } catch (err: any) {
-      setErrorState(err.message);
+    } catch (err) {
+      console.error(err instanceof Error ? err.message : err);
     }
     setIsDeleteModalOpen(false);
     setDeleteTarget(null);
   };
 
-  const handleDownloadReceipt = (payment: any) => {
+  const handleDownloadReceipt = (payment: PaymentRecord) => {
     downloadPDF(
       <BulkPaymentReceiptsPDF payments={[payment]} />,
       `recu-${payment.student.toLowerCase().replace(/\s+/g, '-')}-${payment.id}.pdf`
@@ -367,13 +576,15 @@ const FinanceManager: React.FC = () => {
     paymentBatches.push(selectedPaymentsData.slice(i, i + 5));
   }
 
+  const isOverdue = (p: PaymentRecord) => p.status === 'OVERDUE' || (p.status === 'PENDING' && (p.daysLate || 0) > 0);
+
   const filteredPayments = payments.filter(p => {
     const matchesSearch = p.student.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesFilter =
       (activeFilter === 'Tous') ||
       (activeFilter === 'Payés' && p.status === 'PAID') ||
       (activeFilter === 'En attente' && p.status === 'PENDING') ||
-      (activeFilter === 'En retard' && p.status === 'OVERDUE') ||
+      (activeFilter === 'En retard' && isOverdue(p)) ||
       (activeFilter === 'Archivés' && p.status === 'ARCHIVED');
     const matchesMonth = !selectedMonth || (p.dueDate && getPaymentMonthInfo(p.dueDate).key === selectedMonth);
     return matchesSearch && matchesFilter && matchesMonth;
@@ -390,12 +601,12 @@ const FinanceManager: React.FC = () => {
     setVisibleCount(10);
   }, [searchTerm, activeFilter, selectedMonth]);
 
-  const columns: Column<any>[] = [
+  const columns: Column<PaymentRecord>[] = [
     { header: 'Étudiant', key: 'student' },
     {
       header: 'Montant (MAD)',
       key: 'amount',
-      render: (row) => <span style={{ fontWeight: 600 }}>{row.amount} MAD</span>
+      render: (row) => <span style={{ fontWeight: 600 }}>{formatMAD(row.amount)}</span>
     },
     { header: 'Échéance', key: 'dueDate' },
     {
@@ -406,24 +617,24 @@ const FinanceManager: React.FC = () => {
     {
       header: 'Statut',
       key: 'status',
-      render: (row) => (
-        <div
-          onClick={(e) => {
-            if (row.status !== 'PAID') {
-              e.stopPropagation();
-              setSelectedPayment(row);
-              setMarkPaidData({
-                paymentDate: new Date().toISOString().split('T')[0],
-                method: row.method || 'Espèces'
-              });
-              setIsMarkPaidModalOpen(true);
-            }
-          }}
-          style={{ cursor: row.status !== 'PAID' ? 'pointer' : 'default' }}
-        >
-          <StatusBadge status={row.status} />
-        </div>
-      )
+      render: (row) => {
+        const isOverdueRow = row.status === 'OVERDUE' || (row.status === 'PENDING' && (row.daysLate || 0) > 0);
+        const canMarkPaid = row.status !== 'PAID' && row.status !== 'ARCHIVED';
+        return (
+           <div
+            onClick={(e) => {
+              if (canMarkPaid) {
+                e.stopPropagation();
+                setSelectedPayment(row);
+                setIsMarkPaidModalOpen(true);
+              }
+            }}
+            style={{ cursor: canMarkPaid ? 'pointer' : 'default' }}
+          >
+            <StatusBadge status={isOverdueRow ? 'OVERDUE' : row.status} daysLate={isOverdueRow ? row.daysLate : undefined} />
+          </div>
+        );
+      }
     },
     {
       header: 'Documents',
@@ -466,15 +677,34 @@ const FinanceManager: React.FC = () => {
       render: (row) => (
         <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
           <div style={{ display: 'flex', gap: '4px' }}>
+            {row.status !== 'PAID' && row.status !== 'ARCHIVED' && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setSelectedPayment(row);
+                  setIsMarkPaidModalOpen(true);
+                }}
+                title="Marquer comme payé"
+                style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--color-primary)', padding: '4px', display: 'flex', alignItems: 'center' }}
+              >
+                <CheckCircle size={16} />
+              </button>
+            )}
             <button
               onClick={(e) => {
                 e.stopPropagation();
                 setSelectedPayment(row);
                 setEditFormData({
+                  studentId: row.studentId || '',
                   student: row.student,
                   amount: row.amount,
                   dueDate: row.dueDate,
-                  method: row.method,
+                  method: row.method || 'Espèces',
+                  paymentCategory: row.paymentCategory || 'TUITION',
+                  notes: row.notes || '',
+                  periodStartDate: row.periodStartDate || '',
+                  periodEndDate: row.periodEndDate || '',
+                  isPaid: row.status === 'PAID',
                 });
                 setIsEditModalOpen(true);
               }}
@@ -486,21 +716,17 @@ const FinanceManager: React.FC = () => {
             <button
               onClick={(e) => {
                 e.stopPropagation();
-                if (row.status === 'ARCHIVED') {
-                  ctxUpdatePayment(row.id, { status: 'PENDING' });
-                } else {
-                  setArchiveTarget(row.id);
-                  setIsConfirmModalOpen(true);
-                }
+                setArchiveTarget(row.id);
+                setIsConfirmModalOpen(true);
               }}
-              title={row.status === 'ARCHIVED' ? "Restaurer" : "Archiver"}
+              title="Archiver"
               style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--color-gray)', padding: '4px', display: 'flex', alignItems: 'center' }}
             >
               <Archive size={16} />
             </button>
           </div>
 
-          {row.status === 'OVERDUE' && (
+          {(row.status === 'PENDING' || row.status === 'OVERDUE') && (
             <div style={{ borderLeft: '1px solid var(--color-border)', paddingLeft: '8px' }}>
               <WhatsAppButton
                 phone={row.phone}
@@ -519,18 +745,31 @@ const FinanceManager: React.FC = () => {
   const now = new Date();
   const currentMonthLabel = monthNames[now.getMonth()];
   const totalCollected = payments
-    .filter(p => p.status === 'PAID')
+    .filter(p => {
+      if (p.status !== 'PAID' || !p.paymentDate) return false;
+      const d = new Date(p.paymentDate + 'T00:00:00');
+      return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+    })
     .reduce((sum, p) => sum + (p.amount || 0), 0);
   const pendingPayments = payments.filter(p => p.status === 'PENDING').length;
-  const overdueCount = payments.filter(p => p.status === 'PENDING' && (p.daysLate || 0) > 0).length;
+  const overdueCount = payments.filter(isOverdue).length;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
       <div className="no-print" style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
         {/* Metrics Section */}
-        <div style={{ display: 'flex', gap: '24px' }}>
+        <div style={{ 
+          backgroundColor: 'var(--color-white)', 
+          padding: '24px', 
+          borderRadius: '0px', 
+          boxShadow: 'var(--shadow-sm)', 
+          border: '1px solid var(--color-border)', 
+          display: 'flex', 
+          gap: '24px', 
+          width: '100%' 
+        }}>
           <MetricCard label={`Total encaissé (${currentMonthLabel})`} value={totalCollected.toLocaleString()} color="success" solid />
-          <MetricCard label="Étudiants à jour" value={String(payments.filter(p => p.status === 'PAID').length)} color="default" />
+          <MetricCard label="Paiements payés" value={String(payments.filter(p => p.status === 'PAID').length)} color="default" />
           <MetricCard label="Paiements en attente" value={String(pendingPayments)} color="warning" />
           <MetricCard label="Paiements en retard" value={String(overdueCount)} color="danger" />
         </div>
@@ -555,7 +794,7 @@ const FinanceManager: React.FC = () => {
             alignItems: 'center',
             backgroundColor: 'var(--color-white)',
             padding: '16px',
-            borderRadius: '12px',
+            borderRadius: '0px',
             boxShadow: 'var(--shadow-sm)',
             border: '1px solid var(--color-border)',
             height: '68px',
@@ -754,9 +993,10 @@ const FinanceManager: React.FC = () => {
               >
                 {monthOptions.slice(0, 6).map((m, idx, arr) => {
                   const monthPayments = payments.filter(p => p.dueDate && getPaymentMonthInfo(p.dueDate).key === m.key);
-                  const totalRevenue = monthPayments.reduce((sum, p) => sum + (p.amount || 0), 0);
+                  const collectedMonthPayments = payments.filter(p => p.status === 'PAID' && p.paymentDate && getPaymentMonthInfo(p.paymentDate).key === m.key);
+                  const totalRevenue = collectedMonthPayments.reduce((sum, p) => sum + (p.amount || 0), 0);
                   const statusCircles: { color: string }[] = [];
-                  const overdueCount = monthPayments.filter(p => p.status === 'OVERDUE').length;
+                  const overdueCount = monthPayments.filter(isOverdue).length;
                   const pendingCount = monthPayments.filter(p => p.status === 'PENDING').length;
                   if (overdueCount > 0) statusCircles.push({ color: 'rgba(239, 68, 68, 0.75)' });
                   if (pendingCount > 0) statusCircles.push({ color: 'rgba(234, 179, 8, 0.75)' });
@@ -810,7 +1050,7 @@ const FinanceManager: React.FC = () => {
                     >
                       <span style={{ fontWeight: 700 }}>{m.label}</span>
                       <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--color-gray)' }}>
-                        {totalRevenue.toLocaleString()} MAD
+                        {formatMAD(totalRevenue)}
                       </span>
                       {circlesToShow.length > 0 && (
                         <div style={{
@@ -1015,9 +1255,10 @@ const FinanceManager: React.FC = () => {
                           (pickerYear === now.getFullYear() && idx > now.getMonth());
                         const monthPayments = payments.filter(p => p.dueDate && getPaymentMonthInfo(p.dueDate).key === key);
                         const hasPayments = monthPayments.length > 0;
-                        const totalRevenue = monthPayments.reduce((sum, p) => sum + (p.amount || 0), 0);
+                        const collectedMonthPayments = payments.filter(p => p.status === 'PAID' && p.paymentDate && getPaymentMonthInfo(p.paymentDate).key === key);
+                        const totalRevenue = collectedMonthPayments.reduce((sum, p) => sum + (p.amount || 0), 0);
                         const statusCircles: { color: string; label: string }[] = [];
-                        const overdueCount = monthPayments.filter(p => p.status === 'OVERDUE').length;
+                        const overdueCount = monthPayments.filter(isOverdue).length;
                         const pendingCount = monthPayments.filter(p => p.status === 'PENDING').length;
                         if (overdueCount > 0) statusCircles.push({ color: 'rgba(239, 68, 68, 0.75)', label: `${overdueCount} en retard` });
                         if (pendingCount > 0) statusCircles.push({ color: 'rgba(234, 179, 8, 0.75)', label: `${pendingCount} en attente` });
@@ -1087,7 +1328,7 @@ const FinanceManager: React.FC = () => {
                             <span style={{ fontWeight: 700, fontSize: '15px' }}>{monthName}</span>
                             {hasPayments && (
                               <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--color-gray)' }}>
-                                {totalRevenue.toLocaleString()} MAD
+                                {formatMAD(totalRevenue)}
                               </span>
                             )}
                             {circlesToShow.length > 0 && (
@@ -1132,7 +1373,7 @@ const FinanceManager: React.FC = () => {
               data={displayedPayments}
               selectable
               selectedIds={selectedPaymentIds}
-              onSelectionChange={(ids) => setSelectedPaymentIds(ids as number[])}
+              onSelectionChange={(ids) => setSelectedPaymentIds(ids as string[])}
             />
 
             {hasMore && (
@@ -1229,10 +1470,10 @@ const FinanceManager: React.FC = () => {
                 <DataTable
                   columns={columns.map(col => col.key === 'actions' ? ({
                     ...col,
-                    render: (row: any) => (
+                    render: (row: PaymentRecord) => (
                       <div style={{ display: 'flex', gap: '16px' }}>
                         <button
-                          onClick={(e) => { e.stopPropagation(); ctxUpdatePayment(row.id, { status: 'PENDING' }); }}
+                          onClick={(e) => { e.stopPropagation(); ctxUpdatePayment(row.id, { status: 'PENDING' }).catch((err) => console.error(err)); }}
                           style={{
                             padding: '6px 14px',
                             borderRadius: '8px',
@@ -1278,8 +1519,8 @@ const FinanceManager: React.FC = () => {
                         </button>
                       </div>
                     )
-                  } as Column<any>) : col)}
-                  data={payments.filter(p => p.status === 'ARCHIVED' && p.student.toLowerCase().includes(searchTerm.toLowerCase()))}
+                  } as Column<PaymentRecord>) : col)}
+                  data={filteredPayments.filter(p => p.status === 'ARCHIVED')}
                   selectable={false}
                   hideHeader={true}
                   showCheckboxPlaceholder={true}
@@ -1416,7 +1657,7 @@ const FinanceManager: React.FC = () => {
                         {payment.dueDate}
                       </td>
                       <td style={{ textAlign: 'right', padding: '14px 8px', fontSize: '13px', fontWeight: 600 }}>
-                        {payment.amount}.00 MAD
+                        {formatMAD(payment.amount)}
                       </td>
                     </tr>
                   ))}
@@ -1427,7 +1668,7 @@ const FinanceManager: React.FC = () => {
                         TOTAL GÉNÉRAL
                       </td>
                       <td style={{ textAlign: 'right', padding: '24px 8px 16px', fontSize: '18px', fontWeight: 800, color: 'var(--color-primary)' }}>
-                        {totalSelectedAmount}.00 MAD
+                        {formatMAD(totalSelectedAmount)}
                       </td>
                     </tr>
                   )}
@@ -1438,7 +1679,7 @@ const FinanceManager: React.FC = () => {
                 <div style={{ flex: 1 }}>
                   <h4 style={{ fontSize: '10px', textTransform: 'uppercase', color: 'var(--color-gray)', margin: '0 0 4px 0' }}>Établissement</h4>
                   <p style={{ margin: 0, fontSize: '11px', lineHeight: '1.5' }}>
-                    EduCenter ERP<br />
+                    Centria ERP<br />
                     Gestion Scolaire
                   </p>
                 </div>
@@ -1475,14 +1716,21 @@ const FinanceManager: React.FC = () => {
           </>
         }
       >
+        {saveError && (
+          <div style={{ padding: '12px 16px', backgroundColor: '#fef2f2', border: '1px solid #fecaca', borderRadius: '10px', color: '#b91c1c', fontSize: '0.85rem', fontWeight: 500, marginBottom: '16px' }}>
+            {saveError}
+          </div>
+        )}
         <FormInput
           label="Étudiant"
           type="select"
           value={formData.student}
-          onChange={(e) => handleStudentChange(e.target.value)}
+          onChange={(e) => { handleStudentChange(e.target.value); clearFieldError('student'); }}
           placeholder="Sélectionner un étudiant"
-          options={allStudents.map(s => ({ label: s.full_name || s.name, value: s.full_name || s.name }))}
+          options={allStudents.map(s => ({ label: s.full_name || s.name || '', value: s.full_name || s.name || '' }))}
           required
+          inputId="field-student"
+          error={formErrors.student}
         />
         {periodLabel && (
           <div style={{ padding: '12px 16px', backgroundColor: 'var(--color-primary-light)', borderRadius: '10px', marginBottom: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -1504,26 +1752,63 @@ const FinanceManager: React.FC = () => {
             label="Montant (MAD)"
             type="number"
             value={formData.amount}
-            onChange={(e) => setFormData({ ...formData, amount: parseInt(e.target.value) || 0 })}
-            min={0}
+            onChange={(e) => { setFormData({ ...formData, amount: parseInt(e.target.value) || 0 }); clearFieldError('amount'); }}
+            min={1}
             required
             className="flex-1"
+            inputId="field-amount"
+            error={formErrors.amount}
           />
           <FormInput
             label="Date d'échéance"
             type="date"
             value={formData.dueDate}
-            onChange={(e) => setFormData({ ...formData, dueDate: e.target.value })}
+            onChange={(e) => { setFormData({ ...formData, dueDate: e.target.value }); clearFieldError('dueDate'); }}
             required
             className="flex-1"
+            inputId="field-dueDate"
+            error={formErrors.dueDate}
           />
         </div>
+        <FormInput
+          label="Catégorie"
+          type="select"
+          value={formData.paymentCategory}
+          onChange={(e) => handleCategoryChange(e.target.value)}
+          options={getCategoryOptions(formData.studentId || formData.student)}
+          required
+          inputId="field-paymentCategory"
+          error={formErrors.paymentCategory}
+        />
         <FormInput
           label="Méthode de paiement prévue"
           type="select"
           value={formData.method}
-          onChange={(e) => setFormData({ ...formData, method: e.target.value })}
+          onChange={(e) => { setFormData({ ...formData, method: e.target.value }); clearFieldError('method'); }}
           options={PAYMENT_METHOD_OPTIONS}
+          required
+          inputId="field-method"
+          error={formErrors.method}
+        />
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
+          <input
+            type="checkbox"
+            id="isPaidCheckbox"
+            checked={formData.isPaid}
+            onChange={(e) => setFormData({ ...formData, isPaid: e.target.checked })}
+            style={{ width: '16px', height: '16px', accentColor: 'var(--color-primary)', cursor: 'pointer' }}
+          />
+          <label htmlFor="isPaidCheckbox" style={{ fontSize: 'var(--text-sm)', fontWeight: 500, color: 'var(--color-text)', cursor: 'pointer', userSelect: 'none' }}>
+            Marquer comme payé immédiatement
+          </label>
+        </div>
+        <FormInput
+          label="Notes"
+          type="textarea"
+          value={formData.notes}
+          onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+          placeholder="Commentaire éventuel (facultatif)"
+          optional
         />
       </Modal>
 
@@ -1544,39 +1829,106 @@ const FinanceManager: React.FC = () => {
           </>
         }
       >
+        {saveError && (
+          <div style={{ padding: '12px 16px', backgroundColor: '#fef2f2', border: '1px solid #fecaca', borderRadius: '10px', color: '#b91c1c', fontSize: '0.85rem', fontWeight: 500, marginBottom: '16px' }}>
+            {saveError}
+          </div>
+        )}
         <FormInput
           label="Étudiant"
           type="select"
           value={editFormData.student}
-          onChange={(e) => setEditFormData({ ...editFormData, student: e.target.value })}
-          options={allStudents.map(s => ({ label: s.full_name || s.name, value: s.full_name || s.name }))}
+          onChange={(e) => {
+            const name = e.target.value;
+            const student = allStudents.find(s => s.full_name === name || s.name === name);
+            setEditFormData({ ...editFormData, studentId: student?.id || '', student: name });
+            clearEditFieldError('student');
+          }}
+          options={allStudents.map(s => ({ label: s.full_name || s.name || '', value: s.full_name || s.name || '' }))}
           required
+          inputId="field-edit-student"
+          error={editFormErrors.student}
         />
         <div style={{ display: 'flex', gap: '16px' }}>
           <FormInput
             label="Montant (MAD)"
             type="number"
             value={editFormData.amount}
-            onChange={(e) => setEditFormData({ ...editFormData, amount: parseInt(e.target.value) || 0 })}
-            min={0}
+            onChange={(e) => { setEditFormData({ ...editFormData, amount: parseInt(e.target.value) || 0 }); clearEditFieldError('amount'); }}
+            min={1}
             required
             className="flex-1"
+            inputId="field-edit-amount"
+            error={editFormErrors.amount}
           />
           <FormInput
             label="Date d'échéance"
             type="date"
             value={editFormData.dueDate}
-            onChange={(e) => setEditFormData({ ...editFormData, dueDate: e.target.value })}
+            onChange={(e) => { setEditFormData({ ...editFormData, dueDate: e.target.value }); clearEditFieldError('dueDate'); }}
             required
             className="flex-1"
+            inputId="field-edit-dueDate"
+            error={editFormErrors.dueDate}
           />
         </div>
         <FormInput
-          label="Méthode de paiement prévue"
+          label="Catégorie"
+          type="select"
+          value={editFormData.paymentCategory}
+          onChange={(e) => handleEditCategoryChange(e.target.value)}
+          options={getCategoryOptions(editFormData.studentId || editFormData.student)}
+          required
+          inputId="field-edit-paymentCategory"
+          error={editFormErrors.paymentCategory}
+        />
+        <div style={{ display: 'flex', gap: '16px' }}>
+          <FormInput
+            label="Période début"
+            type="date"
+            value={editFormData.periodStartDate}
+            onChange={(e) => setEditFormData({ ...editFormData, periodStartDate: e.target.value })}
+            className="flex-1"
+            optional
+          />
+          <FormInput
+            label="Période fin"
+            type="date"
+            value={editFormData.periodEndDate}
+            onChange={(e) => setEditFormData({ ...editFormData, periodEndDate: e.target.value })}
+            className="flex-1"
+            optional
+          />
+        </div>
+        <FormInput
+          label="Méthode de paiement"
           type="select"
           value={editFormData.method}
-          onChange={(e) => setEditFormData({ ...editFormData, method: e.target.value })}
+          onChange={(e) => { setEditFormData({ ...editFormData, method: e.target.value }); clearEditFieldError('method'); }}
           options={PAYMENT_METHOD_OPTIONS}
+          required
+          inputId="field-edit-method"
+          error={editFormErrors.method}
+        />
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
+          <input
+            type="checkbox"
+            id="editIsPaidCheckbox"
+            checked={editFormData.isPaid}
+            onChange={(e) => setEditFormData({ ...editFormData, isPaid: e.target.checked })}
+            style={{ width: '16px', height: '16px', accentColor: 'var(--color-primary)', cursor: 'pointer' }}
+          />
+          <label htmlFor="editIsPaidCheckbox" style={{ fontSize: 'var(--text-sm)', fontWeight: 500, color: 'var(--color-text)', cursor: 'pointer', userSelect: 'none' }}>
+            Marquer comme payé
+          </label>
+        </div>
+        <FormInput
+          label="Notes"
+          type="textarea"
+          value={editFormData.notes}
+          onChange={(e) => setEditFormData({ ...editFormData, notes: e.target.value })}
+          placeholder="Commentaire éventuel (facultatif)"
+          optional
         />
       </Modal>
 
@@ -1597,31 +1949,26 @@ const FinanceManager: React.FC = () => {
           </>
         }
       >
+        {saveError && (
+          <div style={{ padding: '12px 16px', backgroundColor: '#fef2f2', border: '1px solid #fecaca', borderRadius: '10px', color: '#b91c1c', fontSize: '0.85rem', fontWeight: 500, marginBottom: '16px' }}>
+            {saveError}
+          </div>
+        )}
+        <div style={{ padding: '16px', backgroundColor: 'rgba(5, 150, 105, 0.1)', border: '1px solid rgba(5, 150, 105, 0.2)', borderRadius: '10px', marginBottom: '16px', textAlign: 'center' }}>
+          <p style={{ fontSize: '1.05rem', fontWeight: 600, color: 'var(--color-primary)', margin: 0, lineHeight: 1.5 }}>
+            Êtes-vous sûr de vouloir marquer ce paiement de <span style={{ fontWeight: 700 }}>{selectedPayment ? formatMAD(selectedPayment.amount) : ''}</span> pour <span style={{ fontWeight: 700 }}>{selectedPayment?.student}</span> comme payé ?
+          </p>
+        </div>
         {selectedPayment && (
-          <div style={{ marginBottom: '20px', padding: '12px', backgroundColor: 'var(--color-primary-light)', borderRadius: '8px' }}>
-            <p style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--color-primary)' }}>
-              Étudiant: {selectedPayment.student}
+          <div style={{ marginBottom: '12px', padding: '12px', backgroundColor: 'var(--color-white)', borderRadius: '8px', border: '1px solid var(--color-border)' }}>
+            <p style={{ fontSize: 'var(--text-sm)', color: 'var(--color-text-secondary)', marginBottom: '4px' }}>
+              Date d'échéance: <span style={{ fontWeight: 600, color: 'var(--color-text)' }}>{selectedPayment.dueDate}</span>
             </p>
-            <p style={{ fontSize: 'var(--text-sm)', color: 'var(--color-primary)' }}>
-              Montant à régler: {selectedPayment.amount} MAD
+            <p style={{ fontSize: 'var(--text-sm)', color: 'var(--color-text-secondary)', margin: 0 }}>
+              Mode de paiement prévu: <span style={{ fontWeight: 600, color: 'var(--color-text)' }}>{selectedPayment.method || 'Espèces'}</span>
             </p>
           </div>
         )}
-        <FormInput
-          label="Date de paiement"
-          type="date"
-          value={markPaidData.paymentDate}
-          onChange={(e) => setMarkPaidData({ ...markPaidData, paymentDate: e.target.value })}
-          required
-        />
-        <FormInput
-          label="Méthode de paiement"
-          type="select"
-          value={markPaidData.method}
-          onChange={(e) => setMarkPaidData({ ...markPaidData, method: e.target.value })}
-          options={PAYMENT_METHOD_OPTIONS}
-          required
-        />
       </Modal>
 
       {/* Unsaved Changes Modal */}
@@ -1706,6 +2053,8 @@ const FinanceManager: React.FC = () => {
           </p>
         </div>
       </Modal>
+
+
     </div>
   );
 };

@@ -6,18 +6,25 @@ import PrimaryButton from '../../components/common/PrimaryButton';
 import EmptyDataOverlay from '../../components/common/EmptyDataOverlay';
 import { StudentExportPDF } from '../../components/finance/StudentExportPDF';
 import { downloadPDF } from '../../utils/exporterUtils';
+import type { MappedStudent } from '../../api/apiService';
+
+type StudentRow = MappedStudent & {
+  name?: string;
+  enrollmentDate?: string;
+  class?: string;
+};
 
 interface StudentsByClassProps {
-  students: any[];
-  onEdit: (student: any) => void;
-  onArchive: (id: string | string[]) => void;
-  classes?: any[];
+  students: StudentRow[];
+  onEdit: (student: StudentRow) => void;
+  onArchive: (id: string) => void;
+  classes?: unknown[];
 }
 
 const StudentsByClass: React.FC<StudentsByClassProps> = ({ students, onEdit, onArchive }) => {
-  const [exportModalConfig, setExportModalConfig] = useState<{ isOpen: boolean, students: any[], className: string } | null>(null);
+  const [exportModalConfig, setExportModalConfig] = useState<{ isOpen: boolean, students: StudentRow[], className: string } | null>(null);
 
-  const handleExportClass = (className: string, classStudents: any[]) => {
+  const handleExportClass = (className: string, classStudents: StudentRow[]) => {
     setExportModalConfig({
       isOpen: true,
       students: classStudents,
@@ -32,7 +39,7 @@ const StudentsByClass: React.FC<StudentsByClassProps> = ({ students, onEdit, onA
     }
     acc[className].push(student);
     return acc;
-  }, {} as Record<string, any[]>);
+  }, {} as Record<string, StudentRow[]>);
 
   const classes = Object.keys(groupedStudents).sort();
 
@@ -109,7 +116,7 @@ const StudentsByClass: React.FC<StudentsByClassProps> = ({ students, onEdit, onA
 
             {/* Student List */}
             <div style={{ display: 'flex', flexDirection: 'column' }}>
-              {(classStudents as any[]).map((student: any, index: number) => {
+              {(classStudents as StudentRow[]).map((student, index) => {
                 return (
                   <div 
                     key={student.id}
@@ -289,10 +296,10 @@ const StudentsByClass: React.FC<StudentsByClassProps> = ({ students, onEdit, onA
                 </tr>
               </thead>
               <tbody>
-                {exportModalConfig.students.map((student: any, index: number) => (
+                {exportModalConfig.students.map((student, index) => (
                   <tr key={student.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
                     <td style={{ padding: '12px 8px', fontSize: '12px', color: 'var(--color-text-secondary)' }}>{index + 1}</td>
-                    <td style={{ padding: '12px 8px', fontSize: '12px', fontWeight: 600 }}>{student.name}</td>
+                    <td style={{ padding: '12px 8px', fontSize: '12px', fontWeight: 600 }}>{student.full_name || student.name}</td>
                   </tr>
                 ))}
               </tbody>
@@ -304,7 +311,7 @@ const StudentsByClass: React.FC<StudentsByClassProps> = ({ students, onEdit, onA
                 Document généré le {new Date().toLocaleDateString('fr-FR')}
               </div>
               <div style={{ fontSize: '10px', fontWeight: 600 }}>
-                Administration EduCenter
+                Administration Centria
               </div>
             </div>
           </div>

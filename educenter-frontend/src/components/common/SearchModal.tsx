@@ -80,11 +80,11 @@ const SearchModal: React.FC<SearchModalProps> = ({ isOpen, onClose }) => {
     }
   };
 
-  const handleClose = () => {
+  const handleClose = React.useCallback(() => {
     setQuery('');
     setSelectedIndex(0);
     onClose();
-  };
+  }, [onClose]);
 
   React.useEffect(() => {
     if (isOpen) {
@@ -102,7 +102,7 @@ const SearchModal: React.FC<SearchModalProps> = ({ isOpen, onClose }) => {
       document.addEventListener('mousedown', handleClickOutside);
     }
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [isOpen]);
+  }, [isOpen, handleClose]);
 
   React.useEffect(() => {
     setSelectedIndex(0);

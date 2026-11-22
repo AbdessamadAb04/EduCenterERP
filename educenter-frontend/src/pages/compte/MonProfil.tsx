@@ -1,13 +1,13 @@
 import React from 'react';
-import { Lock, Mail, User, Eye, EyeOff, ArrowRight, Building2, Pencil, X, Upload, LogOut, Trash2 } from 'lucide-react';
+import { Lock, Mail, User, Eye, EyeOff, Building2, Pencil, X, Upload, LogOut, Trash2 } from 'lucide-react';
 import { NavLink, useParams, useNavigate } from 'react-router-dom';
-import { clearToken, setFullName } from '../../utils/auth';
+import { clearSession, setFullName, getUserId, getEmail } from '../../utils/auth';
 import FormInput from '../../components/common/FormInput';
 import PrimaryButton from '../../components/common/PrimaryButton';
 import StatusBadge from '../../components/common/StatusBadge';
 import Modal from '../../components/common/Modal';
 import TopBar from '../../components/common/TopBar';
-import { supabase } from '../../lib/supabaseClient';
+import { usersService } from '../../api/apiService';
 
 const MonProfil: React.FC = () => {
   const navigate = useNavigate();
@@ -52,51 +52,32 @@ const MonProfil: React.FC = () => {
 
   React.useEffect(() => {
     const fetchProfile = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.user) { setLoading(false); return; }
+      const userId = getUserId();
+      if (!userId) { setLoading(false); return; }
 
-      const { data: userRecord, error: userError } = await supabase
-        .from('users')
-        .select('id, full_name, email, created_at')
-        .eq('auth_user_id', session.user.id)
-        .maybeSingle();
-
-      if (!userError && userRecord) {
+      try {
+        const user = await usersService.get(userId);
         setForm((current) => ({
           ...current,
-          fullName: userRecord.full_name || '',
-          email: userRecord.email || session.user.email || '',
+          fullName: user.full_name || '',
+          email: user.email || getEmail() || '',
         }));
-        setFullName(userRecord.full_name || '');
-        setMemberSince(
-          userRecord.created_at
-            ? new Date(userRecord.created_at).toLocaleDateString('fr-FR', { year: 'numeric', month: 'long' })
-            : ''
-        );
+        setFullName(user.full_name || '');
+        setMemberSince('');
 
-        const { data: roleData } = await supabase
-          .from('user_etablissements')
-          .select('role')
-          .eq('user_id', userRecord.id)
-          .limit(1)
-          .maybeSingle();
-
-        if (roleData) {
+        const memberships = await usersService.memberships(userId);
+        const membership = memberships[0];
+        if (membership?.role) {
           const roleMap: Record<string, string> = {
             OWNER: 'Propriétaire',
             ADMIN: 'Administrateur',
             SECRETARY: 'Secrétaire',
           };
-          setUserRole(roleMap[roleData.role] || roleData.role);
+          setUserRole(roleMap[membership.role] || membership.role);
         }
-      } else {
-        setForm((current) => ({
-          ...current,
-          email: session.user.email || '',
-        }));
+      } finally {
+        setLoading(false);
       }
-
-      setLoading(false);
     };
 
     fetchProfile();
@@ -127,18 +108,11 @@ const MonProfil: React.FC = () => {
   };
 
   const handleSavePersonal = async () => {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session?.user) return;
+    const userId = getUserId();
+    if (!userId) return;
 
-    const { error } = await supabase
-      .from('users')
-      .update({ full_name: form.fullName })
-      .eq('auth_user_id', session.user.id);
-
-    if (!error) {
-      setFullName(form.fullName);
-    }
-
+    await usersService.update(userId, { full_name: form.fullName });
+    setFullName(form.fullName);
     setPersonalEditMode(false);
   };
 
@@ -317,7 +291,7 @@ const MonProfil: React.FC = () => {
                   </button>
                   {confirmAction === 'delete' && confirmStep === 2 ? (
                     <button
-                      onClick={() => { clearToken(); navigate('/login'); }}
+                      onClick={() => { clearSession(); navigate('/login'); }}
                       style={{ padding: '10px 20px', backgroundColor: 'var(--color-danger)', color: 'white', borderRadius: '8px', border: 'none', cursor: 'pointer', fontWeight: 600 }}
                     >
                       Confirmer & supprimer
@@ -326,7 +300,7 @@ const MonProfil: React.FC = () => {
                     <button
                       onClick={() => {
                         if (confirmAction === 'logout') {
-                          clearToken();
+                          clearSession();
                           navigate('/login');
                         } else if (confirmAction === 'delete') {
                           setConfirmStep(2);
@@ -588,20 +562,6 @@ const dangerButtonStyle: React.CSSProperties = {
   fontWeight: 600,
   cursor: 'pointer',
   transition: 'all 0.2s ease',
-};
-
-const linkCardStyle: React.CSSProperties = {
-  width: '100%',
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'space-between',
-  gap: '12px',
-  padding: '14px 16px',
-  borderRadius: '10px',
-  border: '1px solid var(--color-border)',
-  textDecoration: 'none',
-  backgroundColor: 'var(--color-gray-bg)',
-  color: 'var(--color-text)'
 };
 
 function InfoRow({ icon, label, value }: { icon: React.ReactNode; label: string; value: React.ReactNode }) {

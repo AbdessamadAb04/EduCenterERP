@@ -3,8 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { UserPlus, ArrowLeft, Eye, EyeOff, Info } from 'lucide-react';
 import FormInput from '../../components/common/FormInput';
 import PrimaryButton from '../../components/common/PrimaryButton';
-import { supabase } from '../../lib/supabaseClient';
-import { setToken, setFullName } from '../../utils/auth';
+import { usersService } from '../../api/apiService';
+import { setToken, setFullName as setStoredFullName, setEmail as setUserEmail, setUserId, setRole } from '../../utils/auth';
 
 const MIN_LENGTH = 8;
 const MAX_LENGTH = 64;
@@ -151,27 +151,12 @@ const SignupPage: React.FC = () => {
     setLoading(true);
     try {
       const normalizedEmail = email.trim().toLowerCase();
-
-      const { data: authData, error: authError } = await supabase.auth.signUp({
-        email: normalizedEmail,
-        password,
-        options: {
-          data: {
-            full_name: fullName.trim(),
-          },
-        },
-      });
-      if (authError) throw authError;
-      if (!authData.user) throw new Error('Erreur lors de la création du compte.');
-
-      if (!authData.session) {
-        setError('Inscription réussie ! Veuillez vérifier votre email pour confirmer votre compte.');
-        setLoading(false);
-        return;
-      }
-
-      setToken(authData.session.access_token);
-      setFullName(fullName.trim());
+      const user = await usersService.me(normalizedEmail, fullName.trim());
+      setToken(`local-${user.id}`);
+      setStoredFullName(fullName.trim());
+      setUserEmail(normalizedEmail);
+      setUserId(user.id);
+      setRole('OWNER');
       navigate('/post-signup');
     } catch (e) {
       if (e instanceof Error && e.message.includes('User already registered')) {

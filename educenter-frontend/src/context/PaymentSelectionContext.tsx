@@ -2,8 +2,8 @@ import React, { createContext, useContext, useState } from 'react';
 import type { ReactNode } from 'react';
 
 interface PaymentSelectionContextType {
-  selectedPaymentIds: number[];
-  setSelectedPaymentIds: (ids: number[]) => void;
+  selectedPaymentIds: string[];
+  setSelectedPaymentIds: (ids: string[]) => void;
   showReceiptModal: boolean;
   setShowReceiptModal: (show: boolean) => void;
   clearSelection: () => void;
@@ -12,7 +12,7 @@ interface PaymentSelectionContextType {
 const PaymentSelectionContext = createContext<PaymentSelectionContextType | undefined>(undefined);
 
 export const PaymentSelectionProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [selectedPaymentIds, setSelectedPaymentIds] = useState<number[]>([]);
+  const [selectedPaymentIds, setSelectedPaymentIds] = useState<string[]>([]);
   const [showReceiptModal, setShowReceiptModal] = useState(false);
 
   const clearSelection = () => {
@@ -33,6 +33,7 @@ export const PaymentSelectionProvider: React.FC<{ children: ReactNode }> = ({ ch
   );
 };
 
+// eslint-disable-next-line react-refresh/only-export-components
 export const usePaymentSelection = () => {
   const context = useContext(PaymentSelectionContext);
   if (context === undefined) {

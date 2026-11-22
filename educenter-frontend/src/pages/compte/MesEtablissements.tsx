@@ -4,7 +4,8 @@ import {
   Building2, Plus, GraduationCap, Search,
   MapPin, MoreVertical, Users, UserPlus, Settings
 } from 'lucide-react';
-import { supabase } from '../../lib/supabaseClient';
+import { usersService } from '../../api/apiService';
+import { getUserId, getFullName } from '../../utils/auth';
 import { useCenter } from '../../context/CenterContext';
 import TopBar from '../../components/common/TopBar';
 
@@ -42,50 +43,37 @@ const MesEtablissements: React.FC = () => {
 
   useEffect(() => {
     const fetchData = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.user) { setLoading(false); return; }
+      const userId = getUserId();
+      setUserName(getFullName());
+      if (!userId) { setLoading(false); return; }
 
-      const fromMeta = session.user.user_metadata?.full_name as string | undefined;
-      if (fromMeta) setUserName(fromMeta);
-
-      const { data: userRecord, error: userError } = await supabase
-        .from('users')
-        .select('id, full_name')
-        .eq('auth_user_id', session.user.id)
-        .maybeSingle();
-
-      if (!userError && userRecord?.full_name) {
-        setUserName(userRecord.full_name);
-      }
-
-      if (userError || !userRecord) { setLoading(false); return; }
-
-      const { data: userEtabs } = await supabase
-        .from('user_etablissements')
-        .select('etablissements(id, center_name, center_type, city, address, phone, secondary_phone, email, website)')
-        .eq('user_id', userRecord.id);
-
-      if (userEtabs) {
-        const etabs = userEtabs.map((ue: any) => ue.etablissements);
+      try {
+        const memberships = await usersService.memberships(userId);
+        const etabs: Etablissement[] = memberships.flatMap((membership) => {
+          const etab = membership.etablissement;
+          if (!etab) {
+            return [];
+          }
+          return [{
+            id: etab.id,
+            center_name: etab.center_name,
+            center_type: etab.center_type,
+            city: etab.city,
+            address: etab.address,
+            phone: etab.phone,
+            secondary_phone: etab.secondary_phone || '',
+            email: etab.email,
+            website: etab.website || '',
+          }];
+        });
         setEtablissements(etabs);
 
-        const ids = etabs.map((e: any) => e.id).filter(Boolean);
-        if (ids.length > 0) {
-          const { data: countsData } = await supabase
-            .from('user_etablissements')
-            .select('etablissement_id')
-            .in('etablissement_id', ids);
-
-          if (countsData) {
-            const counts: Record<string, number> = {};
-            countsData.forEach((item: any) => {
-              counts[item.etablissement_id] = (counts[item.etablissement_id] || 0) + 1;
-            });
-            setCollaboratorCounts(counts);
-          }
-        }
+        const counts: Record<string, number> = {};
+        etabs.forEach((etab) => { counts[etab.id] = 1; });
+        setCollaboratorCounts(counts);
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
     };
 
     fetchData();

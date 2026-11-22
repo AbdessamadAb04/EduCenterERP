@@ -1,31 +1,44 @@
 import React from 'react';
 import { Clock, Calendar as CalendarIcon, Plus, Archive, Edit2, RotateCcw, Trash2 } from 'lucide-react';
 import ArchiveInfoTooltip from '../../components/common/ArchiveInfoTooltip';
+import type { UiScheduleEvent } from '../../api/apiService';
 
-interface ClasseEvent {
-  id: number;
-  name: string;
-  subject: string;
-  teacher: string;
-  day: number; // 0-6 (Mon-Sun)
-  startTime: string; // "HH:mm"
-  endTime: string; // "HH:mm"
-  color?: string;
-  status?: 'ACTIVE' | 'ARCHIVED';
-}
+type ClasseEvent = UiScheduleEvent;
 
 interface ScheduleCalendarProps {
   events: ClasseEvent[];
   onCreateSession: (slot: { day: number; startTime: string; endTime: string }) => void;
   onEditSession: (event: ClasseEvent) => void;
-  onArchiveSession: (id: number) => void;
-  onDeleteArchivedEvent?: (id: number) => void;
+  onArchiveSession: (id: string) => void;
+  onDeleteArchivedEvent?: (id: string) => void;
   onDeleteAllArchived?: () => void;
 }
 
 const DAYS = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'];
 const HOURS = Array.from({ length: 16 }, (_, i) => i + 8); // 8:00 to 23:00
 const ROW_HEIGHT = 64;
+const MIN_DAY_COL_WIDTH = 100;
+const MIN_CARD_WIDTH = 110;
+const MAX_CARD_WIDTH = 220;
+const CARD_H_PADDING = 12; // 6px left + 6px right
+const CARD_CONTENT_BUFFER = 4;
+
+let measureCanvas: HTMLCanvasElement | null = null;
+const measureTextWidth = (text: string, fontSize: number, fontWeight: number) => {
+  if (!measureCanvas) measureCanvas = document.createElement('canvas');
+  const ctx = measureCanvas.getContext('2d');
+  if (!ctx) return text.length * fontSize * 0.6;
+  ctx.font = `${fontWeight} ${fontSize}px system-ui, -apple-system, 'Segoe UI', sans-serif`;
+  return ctx.measureText(text).width;
+};
+
+const estimateCardWidth = (event: ClasseEvent) => {
+  const nameWidth = measureTextWidth(event.name, 11, 700);
+  const timeWidth = 10 + 3 + measureTextWidth(`${event.startTime} - ${event.endTime}`, 10, 400); // Clock icon + gap + text
+  const teacherWidth = measureTextWidth(event.teacher, 10, 400);
+  const contentWidth = Math.max(nameWidth, timeWidth, teacherWidth);
+  return Math.min(Math.max(Math.ceil(contentWidth) + CARD_H_PADDING + CARD_CONTENT_BUFFER, MIN_CARD_WIDTH), MAX_CARD_WIDTH);
+};
 
 const formatHourLabel = (hour: number) => `${String(hour % 24).padStart(2, '0')}:00`;
 const toMinutes = (time: string) => {
@@ -48,6 +61,14 @@ const resolveEndMinutes = (startTime: string, endTime: string) => {
   return endMinutes;
 };
 
+// "00:00" as an end time means end-of-day when the session starts earlier.
+const formatEventTime = (startTime: string, endTime: string) => {
+  if (endTime === '00:00' && toMinutes(startTime) < 24 * 60) {
+    return `${startTime} - 24:00`;
+  }
+  return `${startTime} - ${endTime}`;
+};
+
 const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({
   events,
   onCreateSession,
@@ -57,19 +78,24 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({
   onDeleteAllArchived,
 }) => {
   const [hoveredCell, setHoveredCell] = React.useState<{ day: number; hour: number } | null>(null);
-  const [hoveredEventId, setHoveredEventId] = React.useState<number | null>(null);
+  const [hoveredEventId, setHoveredEventId] = React.useState<string | null>(null);
   const visibleEvents = React.useMemo(() => events.filter((event) => event.status !== 'ARCHIVED'), [events]);
   const archivedEvents = React.useMemo(() => events.filter((event) => event.status === 'ARCHIVED'), [events]);
 
-  // Compute positions for overlapping events and the width needed by each day column.
+  // Compute positions for overlapping events and the minimal width needed by each day column
+  // based only on the sessions it contains.
   const { eventPositions, dayColumnWidths } = React.useMemo(() => {
-    const map = new Map<number, { leftPercent: number; widthPercent: number; zIndex: number }>();
+    const map = new Map<string, { leftPx: number; widthPx: number; zIndex: number }>();
     const widths = new Map<number, number>();
 
     const eventsByDay: Record<number, ClasseEvent[]> = {};
     visibleEvents.forEach((ev) => {
       (eventsByDay[ev.day] = eventsByDay[ev.day] || []).push(ev);
     });
+
+    const cardSpacing = 8;
+    const leftMargin = 8;
+    const rightGap = 16;
 
     Object.keys(eventsByDay).forEach((dayKey) => {
       const day = Number(dayKey);
@@ -85,7 +111,7 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({
 
       // interval partitioning: assign to first available column
       const columnsEnd: number[] = [];
-      const assignments: Map<number, number> = new Map(); // event id -> slot index
+      const assignments: Map<string, number> = new Map(); // event id -> slot index
 
       dayEvents.forEach(({ ev, start, end }) => {
         let placed = false;
@@ -104,18 +130,22 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({
       });
 
       const totalCols = Math.max(1, columnsEnd.length);
-      widths.set(day, Math.max(160, totalCols * 150));
 
-      const baseLeft = 4; // percent
-      const avail = 88; // percent available for events
-      const slotWidth = avail / totalCols;
+      // Card width matches the widest session content in this column, clamped to safe bounds.
+      const dayCardWidth = Math.max(...dayEvents.map(({ ev }) => estimateCardWidth(ev)));
+
+      // Column width depends only on the sessions of THIS day.
+      const dayColWidth = eventsByDay[day] && eventsByDay[day].length > 0
+        ? leftMargin + totalCols * dayCardWidth + (totalCols - 1) * cardSpacing + rightGap
+        : MIN_DAY_COL_WIDTH;
+
+      widths.set(day, dayColWidth);
 
       dayEvents.forEach(({ ev }) => {
         const idx = assignments.get(ev.id) ?? 0;
-        const gap = 2; // percent gap between columns
-        const leftPercent = baseLeft + idx * slotWidth;
-        const widthPercent = Math.max(slotWidth - gap, 6);
-        map.set(ev.id, { leftPercent, widthPercent, zIndex: 2 + idx });
+        const leftPx = leftMargin + idx * (dayCardWidth + cardSpacing);
+        const widthPx = dayCardWidth;
+        map.set(ev.id, { leftPx, widthPx, zIndex: 2 + idx });
       });
     });
 
@@ -129,8 +159,12 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({
     const startOffset = startMinutes - (8 * 60);
     const duration = endMinutes - startMinutes;
 
+    const gridHeightPx = HOURS.length * ROW_HEIGHT;
     const eventTop = (startOffset / 60) * ROW_HEIGHT;
-    const eventHeight = (duration / 60) * ROW_HEIGHT;
+    const fullHeight = (duration / 60) * ROW_HEIGHT;
+    const maxHeight = Math.max(gridHeightPx - eventTop, 8);
+    const eventHeight = Math.min(fullHeight, maxHeight);
+    const clipped = fullHeight > maxHeight;
     const verticalInset = 2;
 
     return {
@@ -138,6 +172,7 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({
       height: `${Math.max(eventHeight - verticalInset * 2, 8)}px`,
       backgroundColor: event.color || 'var(--color-primary-light)',
       borderLeft: `4px solid ${event.color ? 'rgba(0,0,0,0.2)' : 'var(--color-primary)'}`,
+      clipped,
     };
   };
 
@@ -194,7 +229,8 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({
           flex: 1, 
           position: 'relative', 
           display: 'flex',
-          width: '100%',
+          width: 'max-content',
+          minWidth: '100%',
           backgroundColor: 'var(--color-border)'
         }}>
           {/* Time column */}
@@ -221,12 +257,14 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({
           <div style={{ 
             flex: 1,
             display: 'flex', 
+            minWidth: 'max-content',
             backgroundColor: 'white' // Unified background
           }}>
-              {DAYS.map((day, dayIdx) => (
+               {DAYS.map((day, dayIdx) => (
                   <div key={day} style={{ 
-                      flex: '1 1 0', 
-                      minWidth: `${dayColumnWidths.get(dayIdx) ?? 160}px`, 
+                      flex: '1 1 auto', 
+                      width: `${dayColumnWidths.get(dayIdx) ?? MIN_DAY_COL_WIDTH}px`,
+                      minWidth: `${dayColumnWidths.get(dayIdx) ?? MIN_DAY_COL_WIDTH}px`,
                       borderRight: '1px solid var(--color-border)',
                       position: 'relative',
                       backgroundColor: 'white'
@@ -276,6 +314,7 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({
                                     display: 'flex',
                                     alignItems: 'center',
                                     justifyContent: 'center',
+                                    zIndex: 30,
                                     opacity: hoveredCell?.day === dayIdx && hoveredCell?.hour === hour ? 1 : 0,
                                     transition: 'opacity 0.15s ease',
                                     pointerEvents: 'none',
@@ -304,7 +343,9 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({
                           })}
 
                           {/* Events Overlay */}
-                              {visibleEvents.filter(e => e.day === dayIdx).map(event => (
+                              {visibleEvents.filter(e => e.day === dayIdx).map(event => {
+                              const eventStyle = getEventStyle(event);
+                              return (
                               <div 
                                   key={event.id}
                                   onMouseEnter={() => setHoveredEventId(event.id)}
@@ -320,16 +361,15 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({
                                   flexDirection: 'column',
                                   gap: '2px',
                                   cursor: 'default',
-                                  opacity: event.status === 'ARCHIVED' ? 0.55 : 1,
-                                  transition: 'transform 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease',
-                                  ...getEventStyle(event),
-                                  ...(eventPositions.get(event.id)
-                                  ? {
-                                    left: `${eventPositions.get(event.id)!.leftPercent}%`,
-                                    width: `${eventPositions.get(event.id)!.widthPercent}%`,
-                                    zIndex: eventPositions.get(event.id)!.zIndex,
-                                    }
-                                  : { left: '4px', width: '88%', zIndex: 2 }),
+                                  transition: 'transform 0.15s ease, box-shadow 0.15s ease',
+                                  ...eventStyle,
+                                   ...(eventPositions.get(event.id)
+                                   ? {
+                                     left: `${eventPositions.get(event.id)!.leftPx}px`,
+                                     width: `${eventPositions.get(event.id)!.widthPx}px`,
+                                     zIndex: eventPositions.get(event.id)!.zIndex,
+                                     }
+                                   : { left: '8px', width: `${MIN_CARD_WIDTH}px`, zIndex: 2 }),
                                 }}
                               >
                                   <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', flex: 1 }}>
@@ -337,12 +377,23 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({
                                       {event.name}
                                     </span>
                                     <span style={{ opacity: 0.8, fontSize: '10px', display: 'flex', alignItems: 'center', gap: '3px' }}>
-                                      <Clock size={10} /> {event.startTime} - {event.endTime}
+                                      <Clock size={10} /> {formatEventTime(event.startTime, event.endTime)}
                                     </span>
                                     <span style={{ opacity: 0.8, fontSize: '10px', marginTop: '2px' }}>
                                       {event.teacher}
                                     </span>
                                   </div>
+                                  {eventStyle.clipped && (
+                                    <div style={{
+                                      position: 'absolute', left: 0, right: 0, bottom: 0, height: '16px',
+                                      background: `linear-gradient(to bottom, rgba(255,255,255,0), ${event.color || 'var(--color-primary-light)'})`,
+                                      opacity: 0.9, pointerEvents: 'none',
+                                      display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
+                                      color: 'rgba(15, 23, 42, 0.45)', fontSize: '10px', paddingBottom: '1px'
+                                    }}>
+                                      …
+                                    </div>
+                                  )}
                                   <div style={{ position: 'absolute', right: '6px', bottom: '6px', display: 'flex', gap: '6px', opacity: hoveredEventId === event.id ? 1 : 0, transition: 'opacity 0.15s ease' }}>
                                     <button
                                       title="Modifier"
@@ -394,7 +445,8 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({
                                     </button>
                                   </div>
                               </div>
-                          ))}
+                              );
+                            })}
                       </div>
                   </div>
               ))}
@@ -470,7 +522,7 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({
                           {event.name}
                         </h4>
                         <p style={{ margin: '2px 0 0', fontSize: '12px', color: 'var(--color-gray)' }}>
-                          {dayLabel} • {event.startTime} - {event.endTime}
+                          {dayLabel} • {formatEventTime(event.startTime, event.endTime)}
                         </p>
                       </div>
                     </div>

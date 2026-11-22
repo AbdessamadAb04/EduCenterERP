@@ -3,7 +3,7 @@ import { Pencil, X } from 'lucide-react';
 import { useParams } from 'react-router-dom';
 import FormInput from '../../components/common/FormInput';
 import PrimaryButton from '../../components/common/PrimaryButton';
-import { supabase } from '../../lib/supabaseClient';
+import { etablissementsService } from '../../api/apiService';
 import { useCenter } from '../../context/CenterContext';
 
 const centerTypeOptions = [
@@ -49,13 +49,9 @@ const MonEtablissement: React.FC = () => {
     const fetchEtablissement = async () => {
       if (!etablissementId) { setLoading(false); return; }
 
-      const { data, error } = await supabase
-        .from('etablissements')
-        .select('center_name, center_type, city, address, phone, secondary_phone, email, website')
-        .eq('id', etablissementId)
-        .maybeSingle();
+      const data = await etablissementsService.getById(etablissementId);
 
-      if (!error && data) {
+      if (data) {
         setForm({
           centerName: data.center_name || '',
           centerType: data.center_type || 'langues',
@@ -94,21 +90,18 @@ const MonEtablissement: React.FC = () => {
   const saveToDb = async (formState: FormState) => {
     if (!etablissementId) return;
 
-    const { error } = await supabase
-      .from('etablissements')
-      .update({
-        center_name: formState.centerName,
-        center_type: formState.centerType,
-        city: formState.city,
-        address: formState.address,
-        phone: formState.phone,
-        secondary_phone: formState.secondaryPhone || null,
-        email: formState.email,
-        website: formState.website || null,
-      })
-      .eq('id', etablissementId);
+    const updated = await etablissementsService.update(etablissementId, {
+      center_name: formState.centerName,
+      center_type: formState.centerType,
+      city: formState.city,
+      address: formState.address,
+      phone: formState.phone,
+      secondary_phone: formState.secondaryPhone || null,
+      email: formState.email,
+      website: formState.website || null,
+    });
 
-    if (!error) {
+    if (updated) {
       setEtablissement({
         id: etablissementId,
         centerName: formState.centerName,

@@ -1,7 +1,8 @@
 import React from 'react';
 
+const messages = ['Chargement en cours...', 'Connexion au serveur...', 'Préparation de votre espace...'];
+
 const LoadingScreen: React.FC = () => {
-  const messages = ['Chargement en cours...', 'Connexion au serveur...', 'Préparation de votre espace...'];
   const [index, setIndex] = React.useState(0);
 
   React.useEffect(() => {
@@ -26,7 +27,7 @@ const LoadingScreen: React.FC = () => {
         <div style={{ width: 80, height: 80, borderRadius: 40, background: 'rgba(255,255,255,0.15)', margin: '0 auto 12px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 28, fontWeight: 700 }}>
           EC
         </div>
-        <div style={{ fontSize: 24, fontWeight: 700 }}>EduCenter</div>
+        <div style={{ fontSize: 24, fontWeight: 700 }}>Centria</div>
         <div style={{ marginTop: 8, color: 'rgba(255,255,255,0.85)', marginBottom: 8 }}>{messages[index]}</div>
 
         <div className="loading-dots" aria-hidden>
@@ -37,7 +38,7 @@ const LoadingScreen: React.FC = () => {
       </div>
 
       <div style={{ position: 'absolute', bottom: 24, left: 0, right: 0, textAlign: 'center', color: 'rgba(255,255,255,0.6)', fontSize: 12 }}>
-        EduCenter v0.1
+        Centria v0.1
       </div>
     </div>
   );

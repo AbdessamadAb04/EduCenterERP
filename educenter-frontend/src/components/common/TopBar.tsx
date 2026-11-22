@@ -1,8 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { User, Building2, LogOut } from 'lucide-react';
-import { getFullName, clearToken } from '../../utils/auth';
-import { supabase } from '../../lib/supabaseClient';
+import { getFullName, getEmail, clearSession } from '../../utils/auth';
 
 interface TopBarProps {
   userName?: string;
@@ -11,15 +10,7 @@ interface TopBarProps {
 
 const AccountDropdown = ({ onClose }: { onClose: () => void }) => {
   const navigate = useNavigate();
-  const [email, setEmail] = useState('');
-
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session?.user?.email) {
-        setEmail(session.user.email);
-      }
-    });
-  }, []);
+  const [email] = useState(() => getEmail() || '');
 
   return (
     <div style={{
@@ -68,8 +59,7 @@ const AccountDropdown = ({ onClose }: { onClose: () => void }) => {
       <div
         onClick={() => {
           onClose();
-          clearToken();
-          supabase.auth.signOut();
+          clearSession();
           navigate('/login');
         }}
         style={{

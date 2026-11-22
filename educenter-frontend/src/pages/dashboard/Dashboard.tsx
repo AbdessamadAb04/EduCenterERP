@@ -5,7 +5,7 @@ import DataTable, { type Column } from "../../components/common/DataTable";
 import StatusBadge from "../../components/common/StatusBadge";
 import WhatsAppButton from "../../components/common/WhatsAppButton";
 import EmptyDataOverlay from "../../components/common/EmptyDataOverlay";
-import { dashboardService } from "../../api/supabaseService";
+import { dashboardService, type DashboardStats, type DashboardStudent, type DashboardPayment, type DashboardClass } from "../../api/apiService";
 import {
   AreaChart,
   Area,
@@ -30,13 +30,112 @@ import {
   Plus
 } from "lucide-react";
 
-const emptyData: { name: string; value: number }[] = [];
+const SHORT_MONTHS_FR = ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Juin', 'Juil', 'Août', 'Sep', 'Oct', 'Nov', 'Déc'];
 
-const columnDefs: Record<string, Column<any>[]> = {
+interface ChartDatum {
+  name: string;
+  value: number;
+}
+
+interface OverdueChartDatum {
+  name: string;
+  compare: number;
+  value: number;
+}
+
+function parseDateValue(value?: string | null): number {
+  if (!value) return NaN;
+  const normalized = value.length === 10 ? `${value}T00:00:00` : value;
+  return new Date(normalized).getTime();
+}
+
+function buildEnrollmentSeries(students: DashboardStudent[]): ChartDatum[] {
+  const now = new Date();
+  const result: ChartDatum[] = [];
+  for (let i = 5; i >= 0; i--) {
+    const monthStart = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const monthEnd = new Date(now.getFullYear(), now.getMonth() - i + 1, 1);
+    const count = students
+      .map(s => parseDateValue(s.enrollment_date ?? s.created_at))
+      .filter((t): t is number => !Number.isNaN(t))
+      .filter(t => t >= monthStart.getTime() && t < monthEnd.getTime())
+      .length;
+    result.push({ name: SHORT_MONTHS_FR[monthStart.getMonth()], value: count });
+  }
+  return result;
+}
+
+function buildRevenueSeries(payments: DashboardPayment[]): ChartDatum[] {
+  const now = new Date();
+  const result: ChartDatum[] = [];
+  let cumulative = 0;
+  for (let i = 5; i >= 0; i--) {
+    const monthStart = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const monthPaid = payments
+      .filter(p => p.status === 'PAID' && p.payment_date)
+      .filter(p => {
+        const pd = new Date(p.payment_date + 'T00:00:00');
+        return pd.getMonth() === monthStart.getMonth() && pd.getFullYear() === monthStart.getFullYear();
+      })
+      .reduce((sum, p) => sum + (p.amount || 0), 0);
+    cumulative += monthPaid;
+    result.push({ name: SHORT_MONTHS_FR[monthStart.getMonth()], value: cumulative });
+  }
+  return result;
+}
+
+function buildOverdueSeries(payments: DashboardPayment[]): OverdueChartDatum[] {
+  const now = new Date();
+  const result: OverdueChartDatum[] = [];
+  for (let i = 5; i >= 0; i--) {
+    const monthStart = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const inMonth = (dateStr?: string | null) => {
+      if (!dateStr) return false;
+      const d = new Date(dateStr + 'T00:00:00');
+      return d.getMonth() === monthStart.getMonth() && d.getFullYear() === monthStart.getFullYear();
+    };
+    const paid = payments
+      .filter(p => p.status === 'PAID' && inMonth(p.payment_date))
+      .length;
+    const overdue = payments
+      .filter(p => p.status === 'PENDING' && (p.days_late ?? 0) > 0 && inMonth(p.due_date))
+      .length;
+    result.push({ name: SHORT_MONTHS_FR[monthStart.getMonth()], compare: paid, value: overdue });
+  }
+  return result;
+}
+
+function buildClassesSeries(classes: DashboardClass[], students: DashboardStudent[]): ChartDatum[] {
+  return classes
+    .filter(c => c.status === 'ACTIVE')
+    .map(c => ({
+      name: c.name,
+      value: students.filter(s => s.classe_id === c.id && s.status === 'ACTIVE').length,
+    }))
+    .filter(d => d.value > 0);
+}
+
+type MetricKey = "students" | "revenue" | "overdue" | "classes";
+
+interface DashboardRow {
+  name?: string;
+  class?: string;
+  status?: string;
+  student?: string;
+  amount?: number;
+  method?: string;
+  daysLate?: number;
+  phone?: string;
+  date?: string;
+  level?: string;
+  students?: number;
+}
+
+const columnDefs: Record<MetricKey, Column<DashboardRow>[]> = {
   students: [
     { header: "Nom", key: "name" },
     { header: "Classe", key: "class" },
-    { header: "Statut", key: "status", render: (row) => <StatusBadge status={row.status} /> },
+    { header: "Statut", key: "status", render: (row) => <StatusBadge status={row.status ?? ''} /> },
   ],
   revenue: [
     { header: "Étudiant", key: "student" },
@@ -49,7 +148,7 @@ const columnDefs: Record<string, Column<any>[]> = {
     {
       header: "WhatsApp",
       key: "action",
-      render: (row) => <WhatsAppButton phone={row.phone} studentName={row.name} amount={row.amount} dueDate={row.date} />
+      render: (row) => <WhatsAppButton phone={row.phone ?? ''} studentName={row.name ?? ''} amount={row.amount ?? 0} dueDate={row.date ?? ''} />
     },
   ],
   classes: [
@@ -61,8 +160,6 @@ const columnDefs: Record<string, Column<any>[]> = {
 
 const CLASSES_COLORS = ["#1d4ed8", "#2563eb", "#3b82f6", "#60a5fa", "#93c5fd"];
 
-type MetricKey = "students" | "revenue" | "overdue" | "classes";
-
 const Dashboard: React.FC = () => {
   const navigate = useNavigate();
   const { etablissementId } = useParams<{ etablissementId: string }>();
@@ -70,15 +167,24 @@ const Dashboard: React.FC = () => {
   const [activeMetric, setActiveMetric] = React.useState<MetricKey>("students");
 
   const [loading, setLoading] = useState(true);
-  const [stats, setStats] = useState<any>(null);
+  const [stats, setStats] = useState<DashboardStats | null>(null);
 
   useEffect(() => {
     if (!etablissementId) return;
-    setLoading(true);
+    let cancelled = false;
     dashboardService.getStats(etablissementId)
-      .then(setStats)
-      .catch(console.error)
-      .finally(() => setLoading(false));
+      .then((data) => {
+        if (cancelled) return;
+        setStats(data);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        console.error(err);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => { cancelled = true; };
   }, [etablissementId]);
 
   const activeStudentsCount = stats?.activeStudents ?? 0;
@@ -90,10 +196,19 @@ const Dashboard: React.FC = () => {
   const allPayments = stats?.payments ?? [];
   const allClasses = stats?.classes ?? [];
 
-  const activeData = allStudents.filter((s: any) => s.status === 'ACTIVE').slice(0, 5).map((s: any) => ({ name: s.full_name, class: s.classe_id || '', status: s.status }));
-  const paidData = allPayments.filter((p: any) => p.status === 'PAID').slice(0, 5).map((p: any) => ({ student: p.students?.full_name || '', amount: p.amount, method: p.method }));
-  const overdueData = allPayments.filter((p: any) => p.status === 'PENDING' && p.daysLate > 0).slice(0, 5).map((p: any) => ({ name: p.students?.full_name || '', daysLate: p.daysLate, amount: p.amount, phone: p.students?.phone || '', date: p.due_date }));
-  const classData = allClasses.filter((c: any) => c.status === 'ACTIVE').slice(0, 5).map((c: any) => ({ name: c.name, level: c.level, students: 0 }));
+  const activeData = allStudents.filter(s => s.status === 'ACTIVE').slice(0, 5).map(s => ({ name: s.full_name, class: s.classes?.name ?? '', status: s.status }));
+  const paidData = allPayments.filter(p => p.status === 'PAID').slice(0, 5).map(p => ({ student: p.students?.full_name || '', amount: p.amount, method: p.method }));
+  const overdueData = allPayments.filter(p => p.status === 'PENDING' && (p.days_late ?? 0) > 0).slice(0, 5).map(p => ({ name: p.students?.full_name || '', daysLate: p.days_late ?? 0, amount: p.amount, phone: p.students?.phone || '', date: p.due_date }));
+  const classData = allClasses.filter(c => c.status === 'ACTIVE').slice(0, 5).map(c => ({
+    name: c.name,
+    level: c.level,
+    students: allStudents.filter(s => s.classe_id === c.id && s.status === 'ACTIVE').length,
+  }));
+
+  const enrollmentChartData = buildEnrollmentSeries(allStudents);
+  const revenueChartData = buildRevenueSeries(allPayments);
+  const overdueChartData = buildOverdueSeries(allPayments);
+  const classesChartData = buildClassesSeries(allClasses, allStudents);
 
   const getChartTitle = () => {
     switch (activeMetric) {
@@ -106,9 +221,9 @@ const Dashboard: React.FC = () => {
 
   const getChartSubtitle = () => {
     switch (activeMetric) {
-      case "students": return "Inscriptions hebdomadaires";
+      case "students": return "Inscriptions sur 6 mois";
       case "revenue": return "Revenus cumulés par période";
-      case "overdue": return "Effectués vs En retard (MAD)";
+      case "overdue": return "Effectués vs En retard (nb paiements)";
       case "classes": return "Nombre d'étudiants par niveau/classe";
     }
   };
@@ -136,23 +251,19 @@ const Dashboard: React.FC = () => {
     : activeMetric === "overdue" ? overdueData
     : classData;
 
-  const chartHasData = activeMetric === "students" ? allStudents.length > 0
-    : activeMetric === "revenue" ? allPayments.length > 0
-    : activeMetric === "overdue" ? allPayments.length > 0
-    : allClasses.length > 0;
-
-  const hasChartData = chartHasData;
-
-  const EmptyOverlay = () => <EmptyDataOverlay />;
+  const chartHasData = activeMetric === "students" ? enrollmentChartData.some(d => d.value > 0)
+    : activeMetric === "revenue" ? revenueChartData.some(d => d.value > 0)
+    : activeMetric === "overdue" ? overdueChartData.some(d => d.compare > 0 || d.value > 0)
+    : classesChartData.length > 0;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "32px", width: "100%", paddingBottom: "40px" }}>
-      <div style={{ display: "flex", gap: "24px", width: "100%" }}>
+      <div style={{ backgroundColor: "var(--color-white)", padding: "24px", borderRadius: "0px", boxShadow: "var(--shadow-sm)", border: "1px solid var(--color-border)", display: "flex", gap: "24px", width: "100%" }}>
         <MetricCard
-          label="Total Étudiants Actifs"
-          value={loading ? "..." : String(activeStudentsCount)}
+          label="Total Étudiants"
+          value={loading ? "..." : String(allStudents.length)}
           color="dark"
-          sub={`${allStudents.filter((s: any) => s.status === 'ON_HOLD').length} en attente`}
+          sub={`${activeStudentsCount} actif(s)`}
           icon={<Users size={32} strokeWidth={2} />}
           onClick={() => setActiveMetric("students")}
           active={activeMetric === "students"}
@@ -187,7 +298,7 @@ const Dashboard: React.FC = () => {
       </div>
 
       <div style={{ display: "flex", gap: "24px", width: "100%", alignItems: "stretch", height: "450px" }}>
-        <div style={{ flex: 1, backgroundColor: "var(--color-white)", padding: "24px", borderRadius: "12px", boxShadow: "var(--shadow-sm)", border: "1px solid var(--color-border)", display: "flex", flexDirection: "column" }}>
+          <div style={{ flex: 1, backgroundColor: "var(--color-white)", padding: "24px", borderRadius: "0px", boxShadow: "var(--shadow-sm)", border: "1px solid var(--color-border)", display: "flex", flexDirection: "column" }}>
           <div style={{ marginBottom: "24px" }}>
             <h3 style={{ fontSize: "var(--text-lg)", marginBottom: "4px", textTransform: "capitalize" }}>
               {getChartTitle()}
@@ -197,51 +308,62 @@ const Dashboard: React.FC = () => {
             </p>
           </div>
           <div style={{ width: "100%", flex: 1, minHeight: 0, position: "relative" }}>
-            {!hasChartData && <EmptyOverlay />}
+            {!chartHasData && <EmptyDataOverlay />}
             {activeMetric === "classes" ? (
-              <div style={{ display: "flex", width: "100%", height: "100%", alignItems: "center", justifyContent: "center" }}>
-                <ResponsiveContainer width="100%" height="100%" key="pie">
-                  <PieChart>
-                    <Pie
-                      data={emptyData}
-                      cx="50%"
-                      cy="50%"
-                      outerRadius="80%"
-                      dataKey="value"
-                      stroke="white"
-                      strokeWidth={2}
-                      labelLine={false}
-                    >
-                      {emptyData.map((_, index) => (
-                        <Cell key={`cell-${index}`} fill={CLASSES_COLORS[index % CLASSES_COLORS.length]} />
-                      ))}
-                    </Pie>
-                    <Tooltip contentStyle={{ borderRadius: "0px", border: "1px solid var(--color-border)", boxShadow: "var(--shadow-md)" }} />
-                  </PieChart>
-                </ResponsiveContainer>
+              <div style={{ display: "flex", width: "100%", height: "100%", gap: "16px" }}>
+                <div style={{ width: "60%", height: "100%", position: "relative" }}>
+                  <ResponsiveContainer width="100%" height="100%" key="pie">
+                    <PieChart>
+                      <Pie
+                        data={classesChartData}
+                        cx="50%"
+                        cy="50%"
+                        outerRadius="80%"
+                        dataKey="value"
+                        stroke="white"
+                        strokeWidth={2}
+                        labelLine={false}
+                      >
+                        {classesChartData.map((_, index) => (
+                          <Cell key={`cell-${index}`} fill={CLASSES_COLORS[index % CLASSES_COLORS.length]} />
+                        ))}
+                      </Pie>
+                      <Tooltip contentStyle={{ borderRadius: "0px", border: "1px solid var(--color-border)", boxShadow: "var(--shadow-md)" }} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+                <div style={{ width: "40%", height: "100%", display: "flex", flexDirection: "column", justifyContent: "center", gap: "14px", overflowY: "auto" }}>
+                  {classesChartData.map((d, index) => (
+                    <div key={`legend-${index}`} style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                      <span style={{ width: "12px", height: "12px", borderRadius: "50%", backgroundColor: CLASSES_COLORS[index % CLASSES_COLORS.length], flexShrink: 0 }} />
+                      <span style={{ flex: 1, fontSize: "13px", color: "var(--color-text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.name}</span>
+                      <span style={{ fontSize: "13px", fontWeight: 600, color: "var(--color-text-primary)" }}>{d.value} actif(s)</span>
+                    </div>
+                  ))}
+                </div>
               </div>
             ) : (
               <ResponsiveContainer width="100%" height="100%" key={activeMetric}>
                 {activeMetric === "overdue" ? (
-                  <BarChart data={emptyData} margin={{ left: -20, right: 10, top: 10, bottom: 0 }}>
+                  <BarChart data={overdueChartData} margin={{ left: 0, right: 10, top: 10, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--color-border)" />
                     <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 12 }} />
-                    <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12 }} width={40} tickCount={7} />
+                    <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12 }} width={50} tickCount={7} allowDecimals={false} />
                     <Tooltip contentStyle={{ borderRadius: "0px", border: "1px solid var(--color-border)", boxShadow: "var(--shadow-md)" }} cursor={{ fill: 'rgba(0,0,0,0.02)' }} />
                     <Legend verticalAlign="top" height={36} align="right" iconType="circle" />
                     <Bar name="Effectués" dataKey="compare" fill="var(--color-success)" radius={[0, 0, 0, 0]} barSize={16} />
                     <Bar name="En retard" dataKey="value" fill="var(--color-danger)" radius={[0, 0, 0, 0]} barSize={16} />
                   </BarChart>
                 ) : activeMetric === "students" ? (
-                  <BarChart data={emptyData} margin={{ left: -20, right: 10, top: 10, bottom: 0 }}>
+                  <BarChart data={enrollmentChartData} margin={{ left: 0, right: 10, top: 10, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--color-border)" />
                     <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 12 }} />
-                    <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12 }} width={40} tickCount={7} />
+                    <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12 }} width={50} tickCount={7} allowDecimals={false} />
                     <Tooltip contentStyle={{ borderRadius: "0px", border: "1px solid var(--color-border)", boxShadow: "var(--shadow-md)" }} />
                     <Bar dataKey="value" fill={getChartFillColor()} radius={[0, 0, 0, 0]} barSize={32} />
                   </BarChart>
                 ) : (
-                  <AreaChart data={emptyData} margin={{ left: -20, right: 10, top: 10, bottom: 0 }}>
+                  <AreaChart data={revenueChartData} margin={{ left: 0, right: 10, top: 10, bottom: 0 }}>
                     <defs>
                       <linearGradient id="metricGradient" x1="0" y1="0" x2="0" y2="1">
                         <stop offset="5%" stopColor={getChartFillColor()} stopOpacity={0.3} />
@@ -250,7 +372,7 @@ const Dashboard: React.FC = () => {
                     </defs>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--color-border)" />
                     <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 12 }} />
-                    <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12 }} width={40} tickCount={7} />
+                    <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12 }} width={50} tickCount={7} />
                     <Tooltip contentStyle={{ borderRadius: "0px", border: "1px solid var(--color-border)", boxShadow: "var(--shadow-md)" }} itemStyle={{ fontWeight: 600, color: getChartFillColor() }} />
                     <Area type="linear" dataKey="value" stroke={getChartFillColor()} strokeWidth={2} fillOpacity={1} fill="url(#metricGradient)" />
                   </AreaChart>
@@ -261,7 +383,7 @@ const Dashboard: React.FC = () => {
         </div>
 
         <div style={{ display: "flex", flexDirection: "column", width: "35%" }}>
-          <div style={{ flex: 1, backgroundColor: "var(--color-white)", padding: "24px", borderRadius: "12px", boxShadow: "var(--shadow-sm)", border: "1px solid var(--color-border)", display: "flex", flexDirection: "column" }}>
+        <div style={{ flex: 1, backgroundColor: "var(--color-white)", padding: "24px", borderRadius: "0px", boxShadow: "var(--shadow-sm)", border: "1px solid var(--color-border)", display: "flex", flexDirection: "column" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
               <h3 style={{ fontSize: "var(--text-lg)" }}>
                 {getTableTitle()}

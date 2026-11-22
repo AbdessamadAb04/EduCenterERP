@@ -19,15 +19,7 @@ interface DataTableProps<T> {
   showCheckboxPlaceholder?: boolean;
 }
 
-const dtStyleId = "dt-empty-keyframes";
-if (typeof document !== 'undefined' && !document.getElementById(dtStyleId)) {
-  const s = document.createElement("style");
-  s.id = dtStyleId;
-  s.textContent = `@keyframes emptyFade { 0% { opacity: 0; } 100% { opacity: 1; } }`;
-  document.head.appendChild(s);
-}
-
-const DataTable = <T extends { id?: string | number }>({ 
+const DataTable = <T,>({ 
   columns, 
   data, 
   onRowClick, 
@@ -41,11 +33,13 @@ const DataTable = <T extends { id?: string | number }>({
 }: DataTableProps<T>) => {
   const [hoveredRowId, setHoveredRowId] = React.useState<string | number | null>(null);
   const isAnySelected = selectedIds.length > 0;
+  const isEmptyRow = (row: T): boolean => Boolean((row as { isEmpty?: boolean }).isEmpty);
+  const getRowId = (row: T): string | number | undefined => (row as { id?: string | number }).id;
 
   const handleSelectAll = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (onSelectionChange) {
       if (e.target.checked) {
-        onSelectionChange(data.filter(r => !(r as any).isEmpty).map(r => r.id!));
+        onSelectionChange(data.filter(r => !isEmptyRow(r)).map(r => getRowId(r)!));
       } else {
         onSelectionChange([]);
       }
@@ -94,7 +88,7 @@ const DataTable = <T extends { id?: string | number }>({
                       <input 
                         type="checkbox" 
                         onChange={handleSelectAll}
-                        checked={data.length > 0 && data.filter(r => !(r as any).isEmpty).every(r => selectedIds.includes(r.id!))}
+                        checked={data.length > 0 && data.filter(r => !isEmptyRow(r)).every(r => selectedIds.includes(getRowId(r)!))}
                         style={{ cursor: 'pointer', width: '16px', height: '16px' }}
                       />
                     </div>
@@ -135,8 +129,7 @@ const DataTable = <T extends { id?: string | number }>({
                   boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
                   fontSize: '13px',
                   fontWeight: 500,
-                  color: 'var(--color-gray)',
-                  animation: 'emptyFade 0.3s ease-out forwards'
+                  color: 'var(--color-gray)'
                 }}>
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.35, flexShrink: 0 }}>
                     <rect x="3" y="3" width="18" height="18" rx="2" ry="2" strokeDasharray="4 3" />
@@ -149,10 +142,11 @@ const DataTable = <T extends { id?: string | number }>({
             </tr>
           ) : (
             data.map((row, rowIdx) => {
-              const isSelected = row.id ? selectedIds.includes(row.id) : false;
+              const rowId = getRowId(row);
+              const isSelected = rowId ? selectedIds.includes(rowId) : false;
               return (
                 <tr 
-                  key={row.id || rowIdx} 
+                  key={rowId || rowIdx} 
                   onClick={(e) => {
                     // Only trigger onRowClick if the click wasn't on an interactive element
                     const isInteractive = (e.target as HTMLElement).closest('button, input, a, [role="button"]');
@@ -165,11 +159,11 @@ const DataTable = <T extends { id?: string | number }>({
                     borderBottom: '1px solid var(--color-border)',
                     cursor: onRowClick ? 'pointer' : 'default',
                     transition: 'background-color 0.2s ease',
-                    backgroundColor: isSelected || (hoveredRowId === (row.id || rowIdx) && !(row as any).isEmpty) ? 'var(--color-primary-light)' : 'transparent',
+                    backgroundColor: isSelected || (hoveredRowId === (rowId || rowIdx) && !isEmptyRow(row)) ? 'var(--color-primary-light)' : 'transparent',
                     ...rowStyle
                   }}
                   onMouseEnter={() => {
-                    setHoveredRowId(row.id || rowIdx);
+                    setHoveredRowId(rowId || rowIdx);
                   }}
                   onMouseLeave={() => {
                     setHoveredRowId(null);
@@ -177,16 +171,16 @@ const DataTable = <T extends { id?: string | number }>({
                 >
                   {(selectable || showCheckboxPlaceholder) && (
                     <td style={{ padding: '0 16px' }}>
-                      {selectable && !(row as any).isEmpty && (
+                      {selectable && !isEmptyRow(row) && (
                         <div style={{ 
-                          opacity: (isSelected || isAnySelected || hoveredRowId === (row.id || rowIdx)) ? 1 : 0,
+                          opacity: (isSelected || isAnySelected || hoveredRowId === (rowId || rowIdx)) ? 1 : 0,
                           transition: 'opacity 0.2s ease',
-                          visibility: (isSelected || isAnySelected || hoveredRowId === (row.id || rowIdx)) ? 'visible' : 'hidden'
+                          visibility: (isSelected || isAnySelected || hoveredRowId === (rowId || rowIdx)) ? 'visible' : 'hidden'
                         }}>
                           <input 
                             type="checkbox" 
                             checked={isSelected}
-                            onChange={(e) => handleSelectRow(e, row.id!)}
+                            onChange={(e) => handleSelectRow(e, rowId!)}
                             onClick={(e) => e.stopPropagation()}
                             style={{ cursor: 'pointer', width: '16px', height: '16px' }}
                           />
@@ -200,7 +194,7 @@ const DataTable = <T extends { id?: string | number }>({
                       fontSize: 'var(--text-sm)',
                       color: 'var(--color-text)',
                     }}>
-                      {(row as any).isEmpty ? '' : (col.render ? col.render(row) : (row[col.key as keyof T] as unknown as React.ReactNode))}
+                      {isEmptyRow(row) ? '' : (col.render ? col.render(row) : (row[col.key as keyof T] as unknown as React.ReactNode))}
                     </td>
                   ))}
                 </tr>

@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Building2, Plus, ArrowRight, GraduationCap } from 'lucide-react';
-import { supabase } from '../../lib/supabaseClient';
+import { usersService } from '../../api/apiService';
+import { getUserId } from '../../utils/auth';
 import PrimaryButton from '../../components/common/PrimaryButton';
 
 interface Etablissement {
@@ -17,32 +18,25 @@ const PostSignupPage: React.FC = () => {
 
   useEffect(() => {
     const fetchEtablissements = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.user) {
+      const userId = getUserId();
+      if (!userId) {
         navigate('/login');
         return;
       }
 
-      const { data: userRecord, error: userError } = await supabase
-        .from('users')
-        .select('id')
-        .eq('auth_user_id', session.user.id)
-        .maybeSingle();
-
-      if (!userError && userRecord) {
-        const { data: userEtabs } = await supabase
-          .from('user_etablissements')
-          .select('etablissements(id, center_name, city)')
-          .eq('user_id', userRecord.id);
-
-        if (userEtabs) {
-          setEtablissements(
-            userEtabs.map((ue: any) => ue.etablissements)
-          );
-        }
+      try {
+        const memberships = await usersService.memberships(userId);
+        const etabs: Etablissement[] = memberships.flatMap((membership) => {
+          const etab = membership.etablissement;
+          if (!etab) {
+            return [];
+          }
+          return [{ id: etab.id, center_name: etab.center_name, city: etab.city }];
+        });
+        setEtablissements(etabs);
+      } finally {
+        setLoading(false);
       }
-
-      setLoading(false);
     };
 
     fetchEtablissements();
@@ -100,7 +94,7 @@ const PostSignupPage: React.FC = () => {
 
         <div style={{ textAlign: 'center' }}>
           <h1 style={{ fontSize: '1.5rem', fontWeight: 700, color: 'var(--color-text)', margin: 0 }}>
-            Bienvenue sur EduCenter
+            Bienvenue sur Centria
           </h1>
           <p style={{ fontSize: '0.95rem', color: 'var(--color-text-secondary)', margin: '8px 0 0', lineHeight: 1.5 }}>
             Votre compte a été créé avec succès.

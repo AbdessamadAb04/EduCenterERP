@@ -1,59 +1,59 @@
 package com.educentererp.module.dashboard;
 
-import com.educentererp.module.finance.Payment;
-import com.educentererp.module.finance.PaymentRepository;
-import com.educentererp.module.finance.PaymentStatus;
-import com.educentererp.module.student.StudentRepository;
-import com.educentererp.module.student.StudentStatus;
+import com.educentererp.module.finance.PaymentService;
+import com.educentererp.module.student.StudentService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
 import java.util.Comparator;
 import java.util.List;
-import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
 public class DashboardService {
-    private final StudentRepository studentRepository;
-    private final PaymentRepository paymentRepository;
+
+    private final PaymentService paymentService;
+    private final StudentService studentService;
 
     public DashboardDTO getDashboardData() {
         LocalDate today = LocalDate.now();
         LocalDate firstOfMonth = today.withDayOfMonth(1);
 
-        // Metric Cards Data
-        long activeStudents = studentRepository.countByStatus(StudentStatus.ACTIVE);
-        
-        double monthlyRevenue = paymentRepository.findByStatus(PaymentStatus.PAID).stream()
-                .filter(p -> p.getPaymentDate() != null && !p.getPaymentDate().isBefore(firstOfMonth))
-                .mapToDouble(p -> p.getAmountMad())
-                .sum();
-
-        long pendingCount = paymentRepository.findByStatus(PaymentStatus.PENDING).stream()
-                .filter(p -> !p.getDueDate().isBefore(today))
+        long activeStudents = studentService.list(null).stream()
+                .filter(student -> "ACTIVE".equals(student.status()))
                 .count();
 
-        List<Payment> allOverdue = paymentRepository.findByStatus(PaymentStatus.PENDING).stream()
-                .filter(p -> p.getDueDate().isBefore(today))
-                .collect(Collectors.toList());
+        double monthlyRevenue = paymentService.findPaid().stream()
+                .filter(payment -> payment.getPaymentDate() != null
+                        && !payment.getPaymentDate().isBefore(firstOfMonth))
+                .mapToDouble(payment -> payment.getAmount() == null ? 0.0 : payment.getAmount())
+                .sum();
 
-        long overdueCount = allOverdue.size();
+        List<com.educentererp.module.finance.Payment> overdue = paymentService.findPending().stream()
+                .filter(payment -> payment.getDueDate() != null && payment.getDueDate().isBefore(today))
+                .sorted(Comparator.comparing(com.educentererp.module.finance.Payment::getDueDate))
+                .toList();
 
-        // Recent Data for Tables
-        List<Payment> top5Overdue = allOverdue.stream()
-                .sorted(Comparator.comparing(Payment::getDueDate))
-                .limit(5)
-                .collect(Collectors.toList());
+        long pendingCount = paymentService.findPending().stream()
+                .filter(payment -> payment.getDueDate() != null && !payment.getDueDate().isBefore(today))
+                .count();
 
         return DashboardDTO.builder()
                 .totalActiveStudents(activeStudents)
                 .totalRevenueThisMonth(monthlyRevenue)
                 .pendingPaymentsCount(pendingCount)
-                .overduePaymentsCount(overdueCount)
-                .recentEnrollments(studentRepository.findTop5ByOrderByEnrollmentDateDesc())
-                .recentOverduePayments(top5Overdue)
+                .overduePaymentsCount((long) overdue.size())
+                .recentEnrollments(studentService.list(null).stream()
+                        .sorted(Comparator.comparing(
+                                student -> student.enrollment_date() == null ? "" : student.enrollment_date(),
+                                Comparator.reverseOrder()))
+                        .limit(5)
+                        .toList())
+                .recentOverduePayments(overdue.stream()
+                        .limit(5)
+                        .map(PaymentService::toResponse)
+                        .toList())
                 .build();
     }
 }

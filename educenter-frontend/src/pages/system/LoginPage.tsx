@@ -3,8 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { LogIn, ArrowLeft, Eye, EyeOff } from 'lucide-react';
 import FormInput from '../../components/common/FormInput';
 import PrimaryButton from '../../components/common/PrimaryButton';
-import { supabase } from '../../lib/supabaseClient';
-import { setToken, setFullName } from '../../utils/auth';
+import { usersService } from '../../api/apiService';
+import { setToken, setFullName, setEmail as setUserEmail, setUserId, setRole } from '../../utils/auth';
 
 const LoginPage: React.FC = () => {
   const [email, setEmail] = React.useState('');
@@ -27,25 +27,16 @@ const LoginPage: React.FC = () => {
 
     setLoading(true);
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-      if (error) throw error;
-      setToken(data.session?.access_token || '');
-
-      const { data: userRecord, error: userError } = await supabase
-        .from('users')
-        .select('fullname')
-        .eq('auth_user_id', data.user?.id)
-        .maybeSingle();
-
-      if (!userError && userRecord?.fullname) {
-        setFullName(userRecord.fullname);
-      } else if (data.user?.user_metadata?.full_name) {
-        setFullName(data.user.user_metadata.full_name);
-      }
-
+      const normalizedEmail = email.trim().toLowerCase();
+      const user = await usersService.me(normalizedEmail, normalizedEmail.split('@')[0]);
+      setToken(`local-${user.id}`);
+      setFullName(user.full_name || normalizedEmail.split('@')[0]);
+      setUserEmail(normalizedEmail);
+      setUserId(user.id);
+      setRole('OWNER');
       navigate('/mes-etablissements');
-    } catch (e) {
-      setError('Email ou mot de passe incorrect.');
+    } catch {
+      setError('Connexion impossible. Vérifiez que le backend est démarré.');
     } finally {
       setLoading(false);
     }

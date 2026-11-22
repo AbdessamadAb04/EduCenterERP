@@ -1,13 +1,19 @@
 package com.educentererp.module.classe;
 
 import jakarta.persistence.*;
-import lombok.Data;
-import java.time.LocalDate;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
 
-@Entity // tells Spring Boot this class is a database table
-@Table (name="classe")
-@Data // automatically generates getters, setters and constructors
+import java.time.LocalDateTime;
+
+@Entity
+@Table(name = "classes")
+@Getter
+@Setter
+@NoArgsConstructor
 public class Classe {
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
@@ -15,28 +21,40 @@ public class Classe {
     @Column(nullable = false)
     private String name;
 
-    @Column(nullable = false)
     private String subject;
 
-    @Column
     private String level;
 
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false)
-    private ClasseSchedule schedule;
-
-    @Column(nullable = false)
     private String teacher;
 
-    @Column
     private Integer maxCapacity;
 
-    @Column(nullable = false)
-    private LocalDate startDate;
+    @Column(length = 20)
+    private String status = "ACTIVE";
 
-    @Column(nullable = false)
-    private LocalDate endDate;
+    private Double tarifAmount;
 
-    @Column(nullable = false)
-    private Boolean archived = false;
+    private String tarifPeriod;
+
+    private String color;
+
+    private Long etablissementId;
+
+    private LocalDateTime createdAt;
+
+    private LocalDateTime updatedAt;
+
+    @PrePersist
+    protected void onCreate() {
+        if (status == null || status.isBlank()) {
+            status = "ACTIVE";
+        }
+        createdAt = LocalDateTime.now();
+        updatedAt = createdAt;
+    }
+
+    @PreUpdate
+    protected void onUpdate() {
+        updatedAt = LocalDateTime.now();
+    }
 }

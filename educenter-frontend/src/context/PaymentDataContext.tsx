@@ -1,59 +1,94 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import type { ReactNode } from 'react';
-import { paymentsService } from '../api/supabaseService';
+import { useLocation } from 'react-router-dom';
+import { paymentsService } from '../api/apiService';
+
+export interface PaymentRecord {
+  id: string;
+  studentId: string;
+  student: string;
+  phone: string;
+  class: string;
+  amount: number;
+  dueDate: string;
+  paymentDate: string | null;
+  method: string;
+  status: string;
+  notes: string | null;
+  daysLate: number;
+  paymentCategory: string;
+  periodStartDate: string | null;
+  periodEndDate: string | null;
+  createdAt: string;
+}
+
+type CreatePaymentParams = {
+  student_id: string;
+  amount: number;
+  due_date: string;
+  method: string;
+  payment_category?: string;
+  payment_date?: string | null;
+  status?: string;
+  period_start_date?: string;
+  period_end_date?: string;
+  notes?: string;
+};
+
+type UpdatePaymentParams = Partial<CreatePaymentParams>;
 
 interface PaymentDataContextType {
-  payments: any[];
+  payments: PaymentRecord[];
   loading: boolean;
   error: string | null;
   refreshPayments: () => Promise<void>;
-  handleCreatePayment: (params: any) => Promise<any>;
-  handleUpdatePayment: (id: string, params: any) => Promise<any>;
+  handleCreatePayment: (params: CreatePaymentParams) => Promise<unknown>;
+  handleUpdatePayment: (id: string, params: UpdatePaymentParams) => Promise<unknown>;
   handleDeletePayment: (id: string) => Promise<void>;
-  handleMarkAsPaid: (id: string, paymentDate: string, method: string) => Promise<any>;
-  handleArchivePayment: (id: string) => Promise<any>;
+  handleMarkAsPaid: (id: string, paymentDate: string, method: string) => Promise<unknown>;
+  handleArchivePayment: (id: string) => Promise<unknown>;
 }
 
 const PaymentDataContext = createContext<PaymentDataContextType | undefined>(undefined);
 
 export const PaymentDataProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [payments, setPayments] = useState<any[]>([]);
+  const [payments, setPayments] = useState<PaymentRecord[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [etablissementId, setEtablissementId] = useState<string | null>(null);
-
-  useEffect(() => {
-    const match = window.location.pathname.match(/etablissement\/([^\/]+)/);
-    if (match) setEtablissementId(match[1]);
-  }, []);
+  const location = useLocation();
+  const etablissementId = location.pathname.match(/etablissement\/([^/]+)/)?.[1] ?? null;
 
   const refreshPayments = useCallback(async () => {
-    const match = window.location.pathname.match(/etablissement\/([^\/]+)/);
-    const eid = match?.[1];
-    if (!eid) return;
+    if (!etablissementId) {
+      setPayments([]);
+      setError(null);
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
-      const data = await paymentsService.list(eid);
+      const data = await paymentsService.list(etablissementId);
       setPayments(data);
-    } catch (err: any) {
-      setError(err.message || 'Failed to load payments');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load payments');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [etablissementId]);
 
   useEffect(() => {
+    setPayments([]);
+    setError(null);
     refreshPayments();
   }, [refreshPayments]);
 
-  const handleCreatePayment = async (params: any) => {
+  const handleCreatePayment = async (params: CreatePaymentParams) => {
     const result = await paymentsService.create(params);
     await refreshPayments();
     return result;
   };
 
-  const handleUpdatePayment = async (id: string, params: any) => {
+  const handleUpdatePayment = async (id: string, params: UpdatePaymentParams) => {
     const result = await paymentsService.update(id, params);
     await refreshPayments();
     return result;
@@ -87,6 +122,7 @@ export const PaymentDataProvider: React.FC<{ children: ReactNode }> = ({ childre
   );
 };
 
+// eslint-disable-next-line react-refresh/only-export-components
 export const usePaymentData = () => {
   const context = useContext(PaymentDataContext);
   if (context === undefined) {

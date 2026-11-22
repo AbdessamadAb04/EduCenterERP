@@ -3,49 +3,52 @@ package com.educentererp.module.student;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/students")
 @RequiredArgsConstructor
-@CrossOrigin("*")
 public class StudentController {
 
     private final StudentService studentService;
 
     @GetMapping
-    public List<Student> getAllStudents() {
-        return studentService.getAllStudents();
+    public List<StudentResponse> list(@RequestParam(name = "etablissement_id", required = false) Long etablissementId) {
+        return studentService.list(etablissementId);
     }
 
     @GetMapping("/{id}")
-    public ResponseEntity<Student> getStudentById(@PathVariable Long id) {
-        return ResponseEntity.ok(studentService.getStudentById(id));
+    public StudentResponse get(@PathVariable Long id) {
+        return studentService.get(id);
     }
 
     @PostMapping
-    public ResponseEntity<Student> createStudent(@RequestBody Student student) {
-        return ResponseEntity.ok(studentService.createStudent(student));
+    public StudentResponse create(@RequestBody Map<String, Object> body) {
+        return studentService.create(body);
     }
 
     @PutMapping("/{id}")
-    public ResponseEntity<Student> updateStudent(@PathVariable Long id, @RequestBody Student student) {
-        return ResponseEntity.ok(studentService.updateStudent(id, student));
+    public StudentResponse update(@PathVariable Long id, @RequestBody Map<String, Object> body) {
+        return studentService.update(id, body);
+    }
+
+    @PutMapping("/{id}/archive")
+    public StudentResponse archive(@PathVariable Long id) {
+        return studentService.softDelete(id);
     }
 
     @DeleteMapping("/{id}")
-    public ResponseEntity<Void> deleteStudent(@PathVariable Long id) {
-        studentService.deleteStudent(id);
+    public ResponseEntity<Void> delete(@PathVariable Long id) {
+        studentService.delete(id);
         return ResponseEntity.noContent().build();
     }
 
-    @GetMapping("/status/{status}")
-    public List<Student> getStudentsByStatus(@PathVariable StudentStatus status) {
-        return studentService.getStudentsByStatus(status);
-    }
-
     @GetMapping("/classe/{classeId}")
-    public List<Student> getStudentsByClasse(@PathVariable Long classeId) {
-        return studentService.getStudentsByClasse(classeId);
+    public List<StudentResponse> byClasse(@PathVariable Long classeId) {
+        return studentService.list(null).stream()
+                .filter(student -> String.valueOf(classeId).equals(student.classe_id()))
+                .toList();
     }
 }

@@ -51,7 +51,7 @@ const SettingsPage: React.FC = () => {
   return (
     <div style={{ padding: '0 32px 32px 0', maxWidth: '1200px', margin: '0' }}>
       <div style={{ marginBottom: '32px' }}>
-        <p style={{ color: 'var(--color-gray)', marginTop: '-24px' }}>Configurez votre environnement EduCenter ERP selon vos besoins et préférences.</p>
+        <p style={{ color: 'var(--color-gray)', marginTop: '-24px' }}>Configurez votre environnement Centria ERP selon vos besoins et préférences.</p>
       </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
@@ -122,7 +122,7 @@ const SettingsPage: React.FC = () => {
         </div>
 
         <div style={{ display: 'grid', gap: '8px', fontSize: 'var(--text-sm)' }}>
-          <MetaRow label="Version" value="EduCenter v0.1" icon={<Building2 size={14} />} />
+          <MetaRow label="Version" value="Centria v0.1" icon={<Building2 size={14} />} />
           <MetaRow label="Environnement" value={<StatusBadge status="ACTIVE" />} icon={<Calendar size={14} />} />
           <MetaRow label="Langue" value="Français" icon={<Globe size={14} />} />
           <MetaRow label="Fuseau horaire" value="Africa/Casablanca (GMT+1)" icon={<MapPin size={14} />} />

@@ -170,7 +170,16 @@ const formatCurrency = (val: number) => {
 };
 
 export interface BulkReceiptsProps {
-  payments: any[];
+  payments: Array<{
+    id: string | number;
+    student: string;
+    phone?: string;
+    class?: string;
+    amount: number;
+    dueDate?: string;
+    method?: string;
+    paymentDate?: string | null;
+  }>;
   centerName?: string;
 }
 
@@ -185,7 +194,7 @@ export const BulkPaymentReceiptsPDF: React.FC<BulkReceiptsProps> = ({ payments, 
           </View>
           <View style={styles.headerRight}>
             <Text style={styles.receiptTitle}>REÇU DE PAIEMENT</Text>
-            <Text style={styles.receiptNumber}>REC-2026-{String(payment.id).padStart(4, '0')}</Text>
+            <Text style={styles.receiptNumber}>REC-{new Date().getFullYear()}-{String(payment.id)}</Text>
             <Text style={styles.receiptDate}>{payment.paymentDate || new Date().toLocaleDateString('fr-FR')}</Text>
           </View>
         </View>
@@ -241,7 +250,7 @@ export const BulkPaymentReceiptsPDF: React.FC<BulkReceiptsProps> = ({ payments, 
         {/* Footer */}
         <View style={styles.footer}>
           <View style={{ flex: 1 }}>
-            <Text style={styles.footerLine}>Ce reçu a été généré par EduCenter v0.1</Text>
+            <Text style={styles.footerLine}>Ce reçu a été généré par Centria v0.1</Text>
             <Text style={styles.footerLine}>Gardez ce document comme preuve de paiement.</Text>
           </View>
           <View style={styles.signatureBox}>

@@ -15,7 +15,7 @@ public class CorsConfig {
             @Override
             public void addCorsMappings(@Nonnull CorsRegistry registry) {
                 registry.addMapping("/**")
-                        .allowedOrigins("http://localhost:5173") // React (Vite)
+                        .allowedOriginPatterns("http://localhost:*", "http://127.0.0.1:*")
                         .allowedMethods("*")
                         .allowedHeaders("*");
             }
