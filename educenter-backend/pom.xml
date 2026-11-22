@@ -23,6 +23,7 @@
 
 	<modules>
 		<module>common</module>
+		<module>config-server</module>
 		<module>eureka-server</module>
 		<module>etablissement-service</module>
 		<module>formation-service</module>

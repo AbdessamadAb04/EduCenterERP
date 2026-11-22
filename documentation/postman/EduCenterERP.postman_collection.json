@@ -1,11 +1,12 @@
 {
   "info": {
-    "name": "EduCenterERP - Jalon 02",
-    "description": "Eureka discovery, discovery-based gateway smoke and write checks for the Jalon 02 services.",
+    "name": "EduCenterERP - Jalon 03",
+    "description": "Config Server, Eureka discovery, discovery-based gateway smoke and write checks for the Jalon 03 services.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
     { "key": "baseUrl", "value": "http://localhost:8080" },
+    { "key": "configUrl", "value": "http://localhost:8888" },
     { "key": "eurekaUrl", "value": "http://localhost:8761" },
     { "key": "etablissementId", "value": "1" },
     { "key": "classeId", "value": "1" },
@@ -14,6 +15,35 @@
     { "key": "email", "value": "demo@educenter.local" }
   ],
   "item": [
+    {
+      "name": "Configuration",
+      "item": [
+        {
+          "name": "Config server health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{configUrl}}/actuator/health"
+          }
+        },
+        {
+          "name": "Gateway config",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Accept", "value": "application/json" }],
+            "url": "{{configUrl}}/api-gateway/default"
+          }
+        },
+        {
+          "name": "Etablissement config",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Accept", "value": "application/json" }],
+            "url": "{{configUrl}}/etablissement-service/default"
+          }
+        }
+      ]
+    },
     {
       "name": "Discovery",
       "item": [

@@ -10,8 +10,9 @@ The microservices work is applied progressively from Jalon 00 to Jalon 06. The d
 - `v0.1`: project presentation and target diagrams.
 - `v1.0`: Jalon 01 applied: 3 independent business services, 3 H2 databases and a static API Gateway on `:8080`.
 - `v2.0`: Jalon 02 applied: Eureka on `:8761` and discovery-based Gateway using `lb://` routes.
+- `v3.0`: Jalon 03 applied: Config Server on `:8888` with native YAMLs and local fallback.
 
-The diagrams below describe the target architecture. Jalon 02 implements Eureka, service registration and the single load-balanced entrypoint; Config Server, Feign and RabbitMQ remain later milestones.
+The diagrams below describe the target architecture. Jalon 03 implements centralized configuration on top of Eureka service registration and discovery-based routing; Feign and RabbitMQ remain later milestones.
 
 ## Business class diagram
 
@@ -147,6 +148,7 @@ EduCenterERP/
     postman/EduCenterERP.postman_collection.json
   educenter-backend/
     common/                            Shared DTOs, validation, exception handler, OpenAPI config
+    config-server/                     Centralized configuration - :8888
     eureka-server/                     Service registry - :8761
     etablissement-service/             Users, etablissements, memberships - :8081
     formation-service/                 Classes, sessions, students - :8082
@@ -156,16 +158,17 @@ EduCenterERP/
   README.md                            This file
 ```
 
-## Run Jalon 02
+## Run Jalon 03
 
 ```powershell
 $env:JAVA_HOME="C:\Program Files\Eclipse Adoptium\jdk-25.0.4.101-hotspot"
 .\mvnw.cmd clean install
 ```
 
-Start Eureka first, then the business services and the gateway. Run each command in a separate terminal from `educenter-backend/`:
+Start Config Server first, then Eureka, the business services and the gateway. Run each command in a separate terminal from `educenter-backend/`:
 
 ```powershell
+.\mvnw.cmd -pl config-server spring-boot:run
 .\mvnw.cmd -pl eureka-server spring-boot:run
 .\mvnw.cmd -pl etablissement-service spring-boot:run
 .\mvnw.cmd -pl formation-service spring-boot:run
@@ -173,9 +176,9 @@ Start Eureka first, then the business services and the gateway. Run each command
 .\mvnw.cmd -pl api-gateway spring-boot:run
 ```
 
-Eureka dashboard: `http://localhost:8761/`. Gateway actuator health: `http://localhost:8080/actuator/health`. Discovery-based routes: `http://localhost:8080/actuator/gateway/routes`. Swagger UI remains directly available at `http://localhost:8081/swagger-ui.html`, `:8082/swagger-ui.html` and `:8083/swagger-ui.html`.
+Config Server health: `http://localhost:8888/actuator/health`; a resolved service config is available at `http://localhost:8888/api-gateway/default`. Eureka dashboard: `http://localhost:8761/`. Gateway actuator health: `http://localhost:8080/actuator/health`. Discovery-based routes: `http://localhost:8080/actuator/gateway/routes`. Swagger UI remains directly available at `http://localhost:8081/swagger-ui.html`, `:8082/swagger-ui.html` and `:8083/swagger-ui.html`.
 
-CORS is configured once in the gateway; business services no longer declare browser CORS rules. Gateway routes use Eureka service IDs (`lb://...`) instead of `localhost:808x`.
+Each service imports `optional:configserver:http://localhost:8888`; when Config Server is unavailable, the local `application.properties` values remain the fallback. CORS is configured once in the gateway; business services no longer declare browser CORS rules. Gateway routes use Eureka service IDs (`lb://...`) instead of `localhost:808x`.
 
 PDF receipts require Python and `reportlab`: `python -m pip install -r educenter-backend/finance-service/scripts/requirements.txt`.
 

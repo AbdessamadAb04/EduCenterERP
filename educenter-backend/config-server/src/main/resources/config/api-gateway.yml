@@ -1,0 +1,32 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: api-gateway
+  cloud:
+    gateway:
+      server:
+        webflux:
+          routes:
+            - id: etablissement-service
+              uri: lb://ETABLISSEMENT-SERVICE
+              predicates:
+                - Path=/api/etablissements,/api/etablissements/**,/api/users,/api/users/**
+            - id: formation-service
+              uri: lb://FORMATION-SERVICE
+              predicates:
+                - Path=/api/classes,/api/classes/**,/api/students,/api/students/**,/api/sessions,/api/sessions/**
+            - id: finance-service
+              uri: lb://FINANCE-SERVICE
+              predicates:
+                - Path=/api/payments,/api/payments/**,/api/dashboard,/api/dashboard/**
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,gateway
+  endpoint:
+    gateway:
+      access: unrestricted
