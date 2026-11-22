@@ -7,10 +7,10 @@ The microservices work is applied progressively from Jalon 00 to Jalon 06. The d
 ## Current state vs target
 
 - `v0.0`: one Spring Boot backend, one H2 database, frontend calling `http://localhost:8080`.
-- `v0.1`: project presentation and target diagrams (this document).
-- `v1.0+`: business services, then Gateway, Config Server, Feign, RabbitMQ and resilience.
+- `v0.1`: project presentation and target diagrams.
+- `v1.0`: Jalon 01 applied: 3 independent business services, 3 H2 databases and a static API Gateway on `:8080`.
 
-The diagrams below describe the **target architecture**; they are the Jalon 00 deliverable.
+The diagrams below describe the target architecture. Jalon 01 implements the static-Gateway subset; Eureka, Config Server, Feign and RabbitMQ remain later milestones.
 
 ## Business class diagram
 
@@ -140,32 +140,53 @@ The frontend keeps calling `:8080`; the Gateway is the only public entrypoint. E
 
 ```text
 EduCenterERP/
-  documentation/     Drive links, Jalon objectives, notes
-  educenter-backend/ Spring Boot code (becomes multi-module in Jalon 01)
-  educenter-frontend/ React + TypeScript client
-  README.md          This file
+  documentation/
+    googledrivetps.md                  Jalon objectives and consequences
+    drivelink.md                       Google Drive folder link
+    postman/EduCenterERP.postman_collection.json
+  educenter-backend/
+    common/                            Shared DTOs, validation, exception handler, OpenAPI config
+    etablissement-service/             Users, etablissements, memberships - :8081
+    formation-service/                 Classes, sessions, students - :8082
+    finance-service/                   Payments, dashboard - :8083
+    api-gateway/                       Static routes - :8080
+  educenter-frontend/                  React + TypeScript client
+  README.md                            This file
 ```
 
-## Run the baseline
+## Run Jalon 01
 
 ```powershell
 $env:JAVA_HOME="C:\Program Files\Eclipse Adoptium\jdk-25.0.4.101-hotspot"
-.\mvnw.cmd spring-boot:run
+.\mvnw.cmd clean install
 ```
+
+Start each service in a separate terminal from `educenter-backend/`:
+
+```powershell
+.\mvnw.cmd -pl etablissement-service spring-boot:run
+.\mvnw.cmd -pl formation-service spring-boot:run
+.\mvnw.cmd -pl finance-service spring-boot:run
+.\mvnw.cmd -pl api-gateway spring-boot:run
+```
+
+Swagger UI is available at `http://localhost:8081/swagger-ui.html`, `:8082/swagger-ui.html` and `:8083/swagger-ui.html`.
+
+PDF receipts require Python and `reportlab`: `python -m pip install -r educenter-backend/finance-service/scripts/requirements.txt`.
 
 ```powershell
 npm install
 npm run dev
 ```
 
-Frontend API base URL: `VITE_API_BASE_URL` (default `http://localhost:8080`).
+Frontend API base URL: `VITE_API_BASE_URL` (default `http://localhost:8080`). Import [`documentation/postman/EduCenterERP.postman_collection.json`](documentation/postman/EduCenterERP.postman_collection.json) for smoke and write checks.
 
 ## Jalon map
 
 | Jalon | Tag | Main consequence |
 |---|---|---|
 | 00 | `v0.1` | This README, UML class diagram, target architecture diagram |
-| 01 | `v1.0` | 3 independent business services, own H2 databases, DTO validation |
+| 01 | `v1.0` | 3 independent business services, own H2 databases, static Gateway, DTO validation |
 | 02 | `v2.0` | Eureka + Gateway dynamic routing |
 | 03 | `v3.0` | Centralized Config Server |
 | 04 | `v4.0` | Feign validation, enriched views, idempotency keys |
