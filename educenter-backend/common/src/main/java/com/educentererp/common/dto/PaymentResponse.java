@@ -18,6 +18,8 @@ public record PaymentResponse(
         String payment_category,
         String period_start_date,
         String period_end_date,
-        String created_at
+        String created_at,
+        String etablissement_id,
+        String etablissement_name
 ) {
 }

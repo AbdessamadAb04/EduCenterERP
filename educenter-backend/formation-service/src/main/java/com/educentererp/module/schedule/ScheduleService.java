@@ -5,6 +5,7 @@ import com.educentererp.common.dto.ScheduleClassInfo;
 import com.educentererp.common.dto.ScheduleResponse;
 import com.educentererp.module.classe.Classe;
 import com.educentererp.module.classe.ClasseRepository;
+import com.educentererp.module.idempotency.IdempotencyService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -18,6 +19,7 @@ public class ScheduleService {
 
     private final ScheduleSessionRepository sessionRepository;
     private final ClasseRepository classeRepository;
+    private final IdempotencyService idempotencyService;
 
     public List<ScheduleResponse> listByClass(Long classId) {
         return sessionRepository.findByClasseId(classId).stream()
@@ -35,21 +37,30 @@ public class ScheduleService {
         return toResponse(getEntity(id));
     }
 
-    public ScheduleResponse create(Map<String, Object> body) {
-        ScheduleSession session = new ScheduleSession();
-        apply(session, body);
-        return toResponse(sessionRepository.save(session));
+    public ScheduleResponse create(Map<String, Object> body, String idempotencyKey) {
+        return idempotencyService.replay(idempotencyKey, body, ScheduleResponse.class)
+                .orElseGet(() -> {
+                    ScheduleSession session = new ScheduleSession();
+                    apply(session, body);
+                    ScheduleResponse response = toResponse(sessionRepository.save(session));
+                    idempotencyService.store(idempotencyKey, body, response);
+                    return response;
+                });
     }
 
-    public void createForClass(Long classId, List<Map<String, Object>> sessions) {
+    public void createForClass(Long classId, List<Map<String, Object>> sessions, String idempotencyKey) {
         if (sessions == null) {
+            return;
+        }
+        if (idempotencyService.replay(idempotencyKey, sessions, String.class).isPresent()) {
             return;
         }
         sessions.forEach(session -> {
             Map<String, Object> values = new java.util.HashMap<>(session);
             values.put("class_id", String.valueOf(classId));
-            create(values);
+            create(values, null);
         });
+        idempotencyService.store(idempotencyKey, sessions, "OK");
     }
 
     public void replaceActiveForClass(Long classId, List<Map<String, Object>> sessions) {
@@ -59,7 +70,7 @@ public class ScheduleService {
         if (!active.isEmpty()) {
             sessionRepository.deleteAll(active);
         }
-        createForClass(classId, sessions);
+        createForClass(classId, sessions, null);
     }
 
     public ScheduleResponse update(Long id, Map<String, Object> body) {

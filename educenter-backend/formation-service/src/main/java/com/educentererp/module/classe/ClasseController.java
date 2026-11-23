@@ -28,8 +28,9 @@ public class ClasseController {
     }
 
     @PostMapping
-    public ClassResponse create(@Valid @RequestBody ClasseRequest body) {
-        return classeService.create(body.toMap());
+    public ClassResponse create(@Valid @RequestBody ClasseRequest body,
+                                @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey) {
+        return classeService.create(body.toMap(), idempotencyKey);
     }
 
     @PutMapping("/{id}")

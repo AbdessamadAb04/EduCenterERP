@@ -1,27 +1,21 @@
 package com.educentererp.formation.client;
 
-import org.springframework.beans.factory.annotation.Value;
+import com.educentererp.common.RemoteServiceException;
+import feign.FeignException;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
-import org.springframework.web.client.RestClient;
 
 @Component
+@RequiredArgsConstructor
 public class PaymentClient {
 
-    private final RestClient restClient;
-
-    public PaymentClient(RestClient.Builder builder,
-                         @Value("${services.finance.url:http://localhost:8083}") String baseUrl) {
-        this.restClient = builder.baseUrl(baseUrl).build();
-    }
+    private final PaymentFeignClient feign;
 
     public long countByStudentId(Long studentId) {
-        Long count = restClient.get()
-                .uri(uriBuilder -> uriBuilder
-                        .path("/api/payments/count")
-                        .queryParam("student_id", studentId)
-                        .build())
-                .retrieve()
-                .body(Long.class);
-        return count == null ? 0L : count;
+        try {
+            return feign.countByStudentId(studentId);
+        } catch (FeignException ex) {
+            throw new RemoteServiceException("Finance service indisponible", ex);
+        }
     }
 }

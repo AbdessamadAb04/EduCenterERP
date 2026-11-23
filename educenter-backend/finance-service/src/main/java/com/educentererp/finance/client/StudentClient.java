@@ -1,42 +1,35 @@
 package com.educentererp.finance.client;
 
+import com.educentererp.common.RemoteServiceException;
 import com.educentererp.common.dto.StudentResponse;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.core.ParameterizedTypeReference;
+import feign.FeignException;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
-import org.springframework.web.client.HttpClientErrorException.NotFound;
-import org.springframework.web.client.RestClient;
 
 import java.util.List;
 import java.util.NoSuchElementException;
 
 @Component
+@RequiredArgsConstructor
 public class StudentClient {
 
-    private final RestClient restClient;
-
-    public StudentClient(RestClient.Builder builder,
-                         @Value("${services.formation.url:http://localhost:8082}") String baseUrl) {
-        this.restClient = builder.baseUrl(baseUrl).build();
-    }
+    private final StudentFeignClient feign;
 
     public StudentResponse get(Long id) {
         try {
-            return restClient.get()
-                    .uri("/api/students/{id}", id)
-                    .retrieve()
-                    .body(StudentResponse.class);
-        } catch (NotFound ex) {
+            return feign.get(id);
+        } catch (FeignException.NotFound ex) {
             throw new NoSuchElementException("Étudiant introuvable: " + id);
+        } catch (FeignException ex) {
+            throw new RemoteServiceException("Formation service indisponible", ex);
         }
     }
 
     public List<StudentResponse> list() {
-        List<StudentResponse> students = restClient.get()
-                .uri("/api/students")
-                .retrieve()
-                .body(new ParameterizedTypeReference<>() {
-                });
-        return students == null ? List.of() : students;
+        try {
+            return feign.list();
+        } catch (FeignException ex) {
+            throw new RemoteServiceException("Formation service indisponible", ex);
+        }
     }
 }

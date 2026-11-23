@@ -36,13 +36,16 @@ public class ScheduleController {
     }
 
     @PostMapping
-    public ScheduleResponse create(@Valid @RequestBody SessionRequest body) {
-        return scheduleService.create(body.toMap());
+    public ScheduleResponse create(@Valid @RequestBody SessionRequest body,
+                                   @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey) {
+        return scheduleService.create(body.toMap(), idempotencyKey);
     }
 
     @PostMapping("/classes/{classId}")
-    public void createForClass(@PathVariable Long classId, @RequestBody List<@Valid SessionRequest> sessions) {
-        scheduleService.createForClass(classId, sessions.stream().map(SessionRequest::toMap).toList());
+    public void createForClass(@PathVariable Long classId,
+                               @RequestBody List<@Valid SessionRequest> sessions,
+                               @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey) {
+        scheduleService.createForClass(classId, sessions.stream().map(SessionRequest::toMap).toList(), idempotencyKey);
     }
 
     @PutMapping("/classes/{classId}/replace-active")

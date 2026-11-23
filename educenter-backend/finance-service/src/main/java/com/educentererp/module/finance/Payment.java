@@ -30,6 +30,8 @@ public class Payment {
 
     private Long etablissementId;
 
+    private String etablissementName;
+
     @Column(nullable = false)
     private Double amount;
 

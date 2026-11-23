@@ -2,6 +2,8 @@ package com.educentererp.module.classe;
 
 import com.educentererp.common.JsonValues;
 import com.educentererp.common.dto.ClassResponse;
+import com.educentererp.formation.client.EtablissementClient;
+import com.educentererp.module.idempotency.IdempotencyService;
 import com.educentererp.module.student.StudentRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -16,6 +18,8 @@ public class ClasseService {
 
     private final ClasseRepository classeRepository;
     private final StudentRepository studentRepository;
+    private final EtablissementClient etablissementClient;
+    private final IdempotencyService idempotencyService;
 
     public List<ClassResponse> list(Long etablissementId) {
         List<Classe> classes = etablissementId == null
@@ -33,10 +37,15 @@ public class ClasseService {
                 .orElseThrow(() -> new NoSuchElementException("Classe introuvable: " + id));
     }
 
-    public ClassResponse create(Map<String, Object> body) {
-        Classe classe = new Classe();
-        apply(classe, body);
-        return toResponse(classeRepository.save(classe));
+    public ClassResponse create(Map<String, Object> body, String idempotencyKey) {
+        return idempotencyService.replay(idempotencyKey, body, ClassResponse.class)
+                .orElseGet(() -> {
+                    Classe classe = new Classe();
+                    apply(classe, body);
+                    ClassResponse response = toResponse(classeRepository.save(classe));
+                    idempotencyService.store(idempotencyKey, body, response);
+                    return response;
+                });
     }
 
     public ClassResponse update(Long id, Map<String, Object> body) {
@@ -82,7 +91,11 @@ public class ClasseService {
             classe.setColor(JsonValues.string(body, "color"));
         }
         if (JsonValues.has(body, "etablissement_id")) {
-            classe.setEtablissementId(JsonValues.id(body, "etablissement_id"));
+            Long etablissementId = JsonValues.id(body, "etablissement_id");
+            if (etablissementId != null) {
+                etablissementClient.get(etablissementId);
+            }
+            classe.setEtablissementId(etablissementId);
         }
     }
 

@@ -49,8 +49,9 @@ public class PaymentController {
     }
 
     @PostMapping
-    public PaymentResponse create(@Valid @RequestBody PaymentRequest body) {
-        return paymentService.create(body.toMap());
+    public PaymentResponse create(@Valid @RequestBody PaymentRequest body,
+                                  @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey) {
+        return paymentService.create(body, idempotencyKey);
     }
 
     @PutMapping("/{id}")

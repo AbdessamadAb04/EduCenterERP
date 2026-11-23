@@ -1,14 +1,19 @@
 package com.educentererp.module.finance;
 
 import com.educentererp.common.JsonValues;
+import com.educentererp.common.dto.ClassResponse;
+import com.educentererp.common.dto.EtablissementResponse;
 import com.educentererp.common.dto.PaymentResponse;
 import com.educentererp.common.dto.StudentResponse;
+import com.educentererp.common.dto.request.PaymentRequest;
+import com.educentererp.finance.client.ClassClient;
+import com.educentererp.finance.client.EtablissementClient;
 import com.educentererp.finance.client.StudentClient;
+import com.educentererp.module.idempotency.IdempotencyService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
-import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
@@ -19,6 +24,9 @@ public class PaymentService {
 
     private final PaymentRepository paymentRepository;
     private final StudentClient studentClient;
+    private final ClassClient classClient;
+    private final EtablissementClient etablissementClient;
+    private final IdempotencyService idempotencyService;
 
     public List<PaymentResponse> list(Long etablissementId) {
         List<Payment> payments = etablissementId == null
@@ -36,10 +44,19 @@ public class PaymentService {
                 .orElseThrow(() -> new NoSuchElementException("Paiement introuvable: " + id));
     }
 
-    public PaymentResponse create(Map<String, Object> body) {
-        Payment payment = new Payment();
-        apply(payment, body);
-        return toResponse(paymentRepository.save(payment));
+    public PaymentResponse create(Map<String, Object> body, String idempotencyKey) {
+        return idempotencyService.replay(idempotencyKey, body, PaymentResponse.class)
+                .orElseGet(() -> {
+                    Payment payment = new Payment();
+                    apply(payment, body);
+                    PaymentResponse response = toResponse(paymentRepository.save(payment));
+                    idempotencyService.store(idempotencyKey, body, response);
+                    return response;
+                });
+    }
+
+    public PaymentResponse create(PaymentRequest body, String idempotencyKey) {
+        return create(body.toMap(), idempotencyKey);
     }
 
     public PaymentResponse update(Long id, Map<String, Object> body) {
@@ -49,11 +66,9 @@ public class PaymentService {
     }
 
     public PaymentResponse markAsPaid(Long id, Map<String, Object> body) {
-        Map<String, Object> values = new java.util.HashMap<>(body);
-        values.put("status", "PAID");
-        values.putIfAbsent("payment_date", LocalDate.now().toString());
-        values.put("days_late", 0);
-        return update(id, values);
+        Payment payment = getEntity(id);
+        applyPaymentFields(payment, body);
+        return toResponse(paymentRepository.save(payment));
     }
 
     public void delete(Long id) {
@@ -73,24 +88,48 @@ public class PaymentService {
     }
 
     private void apply(Payment payment, Map<String, Object> body) {
-        if (JsonValues.has(body, "student_id")) {
-            Long studentId = JsonValues.id(body, "student_id");
+        Long studentId = JsonValues.id(body, "student_id");
+        if (studentId != null) {
             StudentResponse student = studentClient.get(studentId);
-            if (student == null) {
-                throw new NoSuchElementException("Étudiant introuvable: " + studentId);
-            }
             payment.setStudentId(studentId);
             payment.setStudentName(student.full_name());
             payment.setPhone(student.phone());
-            payment.setClassName(student.class_name());
-            payment.setEtablissementId(parseId(student.etablissement_id()));
+
+            Long classId = parseId(student.classe_id());
+            if (classId != null) {
+                ClassResponse classe = classClient.get(classId);
+                payment.setClassName(classe.name());
+                payment.setEtablissementId(parseId(classe.etablissement_id()));
+                if (payment.getEtablissementId() != null) {
+                    EtablissementResponse etablissement = etablissementClient.get(payment.getEtablissementId());
+                    payment.setEtablissementName(etablissement.center_name());
+                }
+            }
+        }
+        if (JsonValues.has(body, "etablissement_id")) {
+            Long etablissementId = JsonValues.id(body, "etablissement_id");
+            payment.setEtablissementId(etablissementId);
+            if (etablissementId != null) {
+                EtablissementResponse etablissement = etablissementClient.get(etablissementId);
+                payment.setEtablissementName(etablissement.center_name());
+            } else {
+                payment.setEtablissementName(null);
+            }
+        }
+        if (JsonValues.has(body, "student")) {
+            payment.setStudentName(JsonValues.string(body, "student"));
+        }
+        if (JsonValues.has(body, "phone")) {
+            payment.setPhone(JsonValues.string(body, "phone"));
+        }
+        if (JsonValues.has(body, "class")) {
+            payment.setClassName(JsonValues.string(body, "class"));
         }
         if (JsonValues.has(body, "amount")) {
             payment.setAmount(JsonValues.number(body, "amount"));
         }
         if (JsonValues.has(body, "due_date")) {
             payment.setDueDate(JsonValues.date(body, "due_date"));
-            payment.setDaysLate(daysLate(payment.getDueDate()));
         }
         if (JsonValues.has(body, "payment_date")) {
             payment.setPaymentDate(JsonValues.date(body, "payment_date"));
@@ -116,40 +155,70 @@ public class PaymentService {
         if (JsonValues.has(body, "days_late")) {
             payment.setDaysLate(JsonValues.integer(body, "days_late"));
         }
+        normalizePayment(payment);
+    }
+
+    private void applyPaymentFields(Payment payment, Map<String, Object> body) {
+        if (JsonValues.has(body, "method")) {
+            payment.setMethod(JsonValues.string(body, "method"));
+        }
+        if (JsonValues.has(body, "notes")) {
+            payment.setNotes(JsonValues.string(body, "notes"));
+        }
+        LocalDate paymentDate = JsonValues.has(body, "payment_date")
+                ? JsonValues.date(body, "payment_date")
+                : LocalDate.now();
+        payment.setPaymentDate(paymentDate);
+        payment.setStatus("PAID");
+        normalizePayment(payment);
+    }
+
+    private void normalizePayment(Payment payment) {
+        if (payment.getAmount() == null) {
+            payment.setAmount(0.0);
+        }
+        if (payment.getStatus() == null || payment.getStatus().isBlank()) {
+            payment.setStatus("PENDING");
+        }
+        if (payment.getPaymentCategory() == null || payment.getPaymentCategory().isBlank()) {
+            payment.setPaymentCategory("TUITION");
+        }
+        if (payment.getDaysLate() == null) {
+            payment.setDaysLate(0);
+        }
     }
 
     private static Long parseId(String value) {
         if (value == null || value.isBlank()) {
             return null;
         }
-        return Long.valueOf(value);
-    }
-
-    private static int daysLate(LocalDate dueDate) {
-        if (dueDate == null) {
-            return 0;
+        try {
+            return Long.valueOf(value);
+        } catch (NumberFormatException ex) {
+            throw new IllegalArgumentException("Identifiant invalide: " + value);
         }
-        return (int) Math.max(0, ChronoUnit.DAYS.between(dueDate, LocalDate.now()));
     }
 
     public static PaymentResponse toResponse(Payment payment) {
         return new PaymentResponse(
                 JsonValues.idString(payment.getId()),
                 JsonValues.idString(payment.getStudentId()),
-                payment.getClassName() == null ? "" : payment.getClassName(),
-                payment.getStudentName() == null ? "" : payment.getStudentName(),
-                payment.getPhone() == null ? "" : payment.getPhone(),
-                payment.getAmount(),
+                payment.getClassName(),
+                payment.getStudentName(),
+                payment.getPhone(),
+                payment.getAmount() == null ? 0.0 : payment.getAmount(),
                 JsonValues.dateString(payment.getDueDate()),
                 JsonValues.dateString(payment.getPaymentDate()),
                 payment.getMethod(),
                 payment.getStatus(),
                 payment.getNotes(),
-                payment.getDaysLate() == null ? daysLate(payment.getDueDate()) : payment.getDaysLate(),
+                payment.getDaysLate(),
                 payment.getPaymentCategory(),
                 JsonValues.dateString(payment.getPeriodStartDate()),
                 JsonValues.dateString(payment.getPeriodEndDate()),
-                payment.getCreatedAt() == null ? null : payment.getCreatedAt().toString()
+                payment.getCreatedAt() == null ? null : payment.getCreatedAt().toString(),
+                JsonValues.idString(payment.getEtablissementId()),
+                payment.getEtablissementName()
         );
     }
 }
