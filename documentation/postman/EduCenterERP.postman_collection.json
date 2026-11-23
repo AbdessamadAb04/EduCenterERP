@@ -1,0 +1,352 @@
+ {
+  "info": {
+    "name": "EduCenterERP - Jalon 04",
+    "description": "Config Server, Eureka discovery, Feign validation, enriched payments and idempotency checks for the Jalon 04 services.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8080" },
+    { "key": "configUrl", "value": "http://localhost:8888" },
+    { "key": "eurekaUrl", "value": "http://localhost:8761" },
+    { "key": "etablissementId", "value": "1" },
+    { "key": "classeId", "value": "1" },
+    { "key": "studentId", "value": "1" },
+    { "key": "paymentId", "value": "1" },
+    { "key": "email", "value": "demo@educenter.local" },
+    { "key": "idempotencyKey", "value": "jalon04-demo" }
+  ],
+  "item": [
+    {
+      "name": "Configuration",
+      "item": [
+        {
+          "name": "Config server health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{configUrl}}/actuator/health"
+          }
+        },
+        {
+          "name": "Gateway config",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Accept", "value": "application/json" }],
+            "url": "{{configUrl}}/api-gateway/default"
+          }
+        },
+        {
+          "name": "Etablissement config",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Accept", "value": "application/json" }],
+            "url": "{{configUrl}}/etablissement-service/default"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Discovery",
+      "item": [
+        {
+          "name": "Eureka applications",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Accept", "value": "application/json" }],
+            "url": "{{eurekaUrl}}/eureka/apps"
+          }
+        },
+        {
+          "name": "Gateway actuator health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/actuator/health"
+          }
+        },
+        {
+          "name": "Gateway actuator routes",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/actuator/gateway/routes"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Smoke",
+      "item": [
+        {
+          "name": "Get current user",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/users/me?email={{email}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "users", "me"],
+              "query": [{ "key": "email", "value": "{{email}}" }]
+            }
+          }
+        },
+        {
+          "name": "List etablissements",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/etablissements"
+          }
+        },
+        {
+          "name": "List classes",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/classes?etablissement_id={{etablissementId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "classes"],
+              "query": [{ "key": "etablissement_id", "value": "{{etablissementId}}" }]
+            }
+          }
+        },
+        {
+          "name": "List students",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/students?etablissement_id={{etablissementId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "students"],
+              "query": [{ "key": "etablissement_id", "value": "{{etablissementId}}" }]
+            }
+          }
+        },
+        {
+          "name": "List sessions",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/sessions?etablissement_id={{etablissementId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "sessions"],
+              "query": [{ "key": "etablissement_id", "value": "{{etablissementId}}" }]
+            }
+          }
+        },
+        {
+          "name": "List payments",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/payments?etablissement_id={{etablissementId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "payments"],
+              "query": [{ "key": "etablissement_id", "value": "{{etablissementId}}" }]
+            }
+          }
+        },
+        {
+          "name": "Count payments for student",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/payments/count?student_id={{studentId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "payments", "count"],
+              "query": [{ "key": "student_id", "value": "{{studentId}}" }]
+            }
+          }
+        },
+        {
+          "name": "Get dashboard",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/dashboard"
+          }
+        },
+        {
+          "name": "Download receipt",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/payments/{{paymentId}}/receipt"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Writes",
+      "item": [
+        {
+          "name": "Create class",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Espagnol - A1\",\n  \"subject\": \"Espagnol\",\n  \"level\": \"A1\",\n  \"teacher\": \"Sofia Amrani\",\n  \"max_capacity\": 12,\n  \"tarif_amount\": 450,\n  \"tarif_period\": \"mensuel\",\n  \"color\": \"#F59E0B\",\n  \"etablissement_id\": \"{{etablissementId}}\"\n}"
+            },
+            "url": "{{baseUrl}}/api/classes"
+          }
+        },
+        {
+          "name": "Create student",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"full_name\": \"Nadia Idrissi\",\n  \"phone\": \"0669998888\",\n  \"classe_id\": \"{{classeId}}\",\n  \"enrollment_date\": \"2026-11-22\",\n  \"tuition_fee\": 500,\n  \"registration_fee\": 200\n}"
+            },
+            "url": "{{baseUrl}}/api/students"
+          }
+        },
+        {
+          "name": "Create payment",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"student_id\": \"{{studentId}}\",\n  \"amount\": 500,\n  \"due_date\": \"2026-12-22\",\n  \"method\": \"Virement\",\n  \"payment_category\": \"TUITION\"\n}"
+            },
+            "url": "{{baseUrl}}/api/payments"
+          }
+        },
+        {
+          "name": "Delete student with payments (expect 400)",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": "{{baseUrl}}/api/students/{{studentId}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Idempotency & Feign validation",
+      "item": [
+        {
+          "name": "Create class with idempotency key",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "{{idempotencyKey}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Allemand - A2\",\n  \"subject\": \"Allemand\",\n  \"level\": \"A2\",\n  \"teacher\": \"Lukas Meyer\",\n  \"max_capacity\": 10,\n  \"tarif_amount\": 480,\n  \"tarif_period\": \"mensuel\",\n  \"color\": \"#3B82F6\",\n  \"etablissement_id\": \"{{etablissementId}}\"\n}"
+            },
+            "url": "{{baseUrl}}/api/classes"
+          }
+        },
+        {
+          "name": "Replay class idempotency key",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "{{idempotencyKey}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Allemand - A2\",\n  \"subject\": \"Allemand\",\n  \"level\": \"A2\",\n  \"teacher\": \"Lukas Meyer\",\n  \"max_capacity\": 10,\n  \"tarif_amount\": 480,\n  \"tarif_period\": \"mensuel\",\n  \"color\": \"#3B82F6\",\n  \"etablissement_id\": \"{{etablissementId}}\"\n}"
+            },
+            "url": "{{baseUrl}}/api/classes"
+          }
+        },
+        {
+          "name": "Create payment with idempotency key",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "{{idempotencyKey}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"student_id\": \"{{studentId}}\",\n  \"amount\": 480,\n  \"due_date\": \"2026-12-31\",\n  \"method\": \"Virement\",\n  \"payment_category\": \"TUITION\"\n}"
+            },
+            "url": "{{baseUrl}}/api/payments"
+          }
+        },
+        {
+          "name": "Replay payment idempotency key",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "{{idempotencyKey}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"student_id\": \"{{studentId}}\",\n  \"amount\": 480,\n  \"due_date\": \"2026-12-31\",\n  \"method\": \"Virement\",\n  \"payment_category\": \"TUITION\"\n}"
+            },
+            "url": "{{baseUrl}}/api/payments"
+          }
+        },
+        {
+          "name": "Unknown etablissement (expect 404)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Classe orpheline\",\n  \"subject\": \"Test\",\n  \"level\": \"A1\",\n  \"etablissement_id\": \"999999\"\n}"
+            },
+            "url": "{{baseUrl}}/api/classes"
+          }
+        },
+        {
+          "name": "Unknown student payment (expect 404)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"student_id\": \"999999\",\n  \"amount\": 100,\n  \"due_date\": \"2026-12-31\",\n  \"method\": \"Especes\",\n  \"payment_category\": \"TUITION\"\n}"
+            },
+            "url": "{{baseUrl}}/api/payments"
+          }
+        },
+        {
+          "name": "Replay payment idempotency key with different body (expect 409)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "{{idempotencyKey}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"student_id\": \"{{studentId}}\",\n  \"amount\": 999,\n  \"due_date\": \"2026-12-31\",\n  \"method\": \"Virement\",\n  \"payment_category\": \"TUITION\"\n}"
+            },
+            "url": "{{baseUrl}}/api/payments",
+            "description": "Reuses the same Idempotency-Key as the payment idempotency test with a different payload. Expected: 409 Conflict."
+          }
+        },
+        {
+          "name": "Payment when formation-service unavailable (expect 502)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"student_id\": \"{{studentId}}\",\n  \"amount\": 100,\n  \"due_date\": \"2026-12-31\",\n  \"method\": \"Especes\",\n  \"payment_category\": \"TUITION\"\n}"
+            },
+            "url": "{{baseUrl}}/api/payments",
+            "description": "Manual communication-error scenario: stop formation-service, then send this request through the gateway. Finance uses Feign to validate the student/class and should return 502 Bad Gateway when formation-service is unavailable."
+          }
+        }
+      ]
+    }
+  ]
+}
