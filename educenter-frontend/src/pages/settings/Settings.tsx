@@ -1,0 +1,175 @@
+import React from 'react';
+import { 
+  User, 
+  Bell, 
+  Database, 
+  Globe, 
+  Palette,
+  Building2,
+  Calendar,
+  MapPin,
+  ArrowRight
+} from 'lucide-react';
+import StatusBadge from '../../components/common/StatusBadge';
+
+const SettingsPage: React.FC = () => {
+  const settingsSections = [
+    {
+      title: 'Profil & Compte',
+      icon: <User size={20} />,
+      items: [
+        { label: 'Informations personnelles', desc: 'Gérez votre nom, e-mail et avatar' },
+        { label: 'Changer le mot de passe', desc: 'Mettez à jour vos identifiants de sécurité' }
+      ]
+    },
+    {
+      title: 'Système',
+      icon: <Database size={20} />,
+      items: [
+        { label: 'Configuration de l\'institution', desc: 'Nom, adresse et logo de l\'école' },
+        { label: 'Sauvegarde des données', desc: 'Gérez les exports et copies de sécurité' }
+      ]
+    },
+    {
+      title: 'Apparence',
+      icon: <Palette size={20} />,
+      items: [
+        { label: 'Thème visuel', desc: 'Basculer entre mode clair, sombre ou émeraude' },
+        { label: 'Langue du système', desc: 'Français, Anglais, Arabe' }
+      ]
+    },
+    {
+      title: 'Notifications',
+      icon: <Bell size={20} />,
+      items: [
+        { label: 'Alertes WhatsApp', desc: 'Configurer l\'API de rappel automatique' },
+        { label: 'E-mails de gestion', desc: 'Fréquence des rapports quotidiens' }
+      ]
+    }
+  ];
+
+  return (
+    <div style={{ padding: '0 32px 32px 0', maxWidth: '1200px', margin: '0' }}>
+      <div style={{ marginBottom: '32px' }}>
+        <p style={{ color: 'var(--color-gray)', marginTop: '-24px' }}>Configurez votre environnement Centria ERP selon vos besoins et préférences.</p>
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+        {settingsSections.map((section, idx) => (
+          <div key={idx} style={{
+            backgroundColor: 'var(--color-white)',
+            borderRadius: '12px',
+            border: '1px solid var(--color-border)',
+            boxShadow: 'var(--shadow-sm)',
+            padding: '24px'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '20px', paddingBottom: '12px', borderBottom: '1px solid var(--color-gray-bg)' }}>
+              <div style={{ 
+                backgroundColor: 'var(--color-primary-light)', 
+                color: 'var(--color-primary)', 
+                padding: '8px', 
+                borderRadius: '8px' 
+              }}>
+                {section.icon}
+              </div>
+              <h3 style={{ fontSize: 'var(--text-lg)', fontWeight: 600 }}>{section.title}</h3>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              {section.items.map((item, itemIdx) => (
+                <div key={itemIdx} style={{ 
+                  display: 'flex', 
+                  justifyContent: 'space-between', 
+                  alignItems: 'center',
+                  cursor: 'pointer',
+                  padding: '8px',
+                  borderRadius: '8px',
+                  transition: 'background 0.2s'
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--color-gray-bg)')}
+                onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                >
+                  <div>
+                    <div style={{ fontWeight: 500, fontSize: '15px' }}>{item.label}</div>
+                    <div style={{ fontSize: '13px', color: 'var(--color-gray)' }}>{item.desc}</div>
+                  </div>
+                  <div style={{ color: 'var(--color-primary)', fontSize: '13px', fontWeight: 600 }}>Modifier</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div style={{
+        backgroundColor: 'var(--color-white)',
+        borderRadius: '12px',
+        border: '1px solid var(--color-border)',
+        boxShadow: 'var(--shadow-sm)',
+        padding: '24px',
+        marginTop: '32px'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '20px', paddingBottom: '12px', borderBottom: '1px solid var(--color-gray-bg)' }}>
+          <div style={{
+            backgroundColor: 'var(--color-primary-light)',
+            color: 'var(--color-primary)',
+            padding: '8px',
+            borderRadius: '8px'
+          }}>
+            <Building2 size={20} />
+          </div>
+          <h3 style={{ fontSize: 'var(--text-lg)', fontWeight: 600 }}>Informations du système</h3>
+        </div>
+
+        <div style={{ display: 'grid', gap: '8px', fontSize: 'var(--text-sm)' }}>
+          <MetaRow label="Version" value="Centria v0.1" icon={<Building2 size={14} />} />
+          <MetaRow label="Environnement" value={<StatusBadge status="ACTIVE" />} icon={<Calendar size={14} />} />
+          <MetaRow label="Langue" value="Français" icon={<Globe size={14} />} />
+          <MetaRow label="Fuseau horaire" value="Africa/Casablanca (GMT+1)" icon={<MapPin size={14} />} />
+          <MetaRow label="Dernière mise à jour" value="29 mai 2026" icon={<ArrowRight size={14} />} last />
+        </div>
+      </div>
+
+      <div style={{ 
+        marginTop: '32px', 
+        padding: '24px', 
+        borderRadius: '12px', 
+        backgroundColor: '#fef2f2', 
+        border: '1px solid #fee2e2',
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center'
+      }}>
+        <div>
+          <h4 style={{ color: '#991b1b', fontWeight: 600 }}>Zone de Danger</h4>
+          <p style={{ color: '#b91c1c', fontSize: '14px' }}>Réinitialisation complète des données ou suppression du compte institution.</p>
+        </div>
+        <button style={{ 
+          backgroundColor: '#dc2626', 
+          color: 'white', 
+          border: 'none', 
+          padding: '10px 20px', 
+          borderRadius: '8px', 
+          fontWeight: 600, 
+          cursor: 'pointer' 
+        }}>
+          Action Critique
+        </button>
+      </div>
+    </div>
+  );
+};
+
+function MetaRow({ label, value, icon, last = false }: { label: string; value: React.ReactNode; icon: React.ReactNode; last?: boolean }) {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'space-between', gap: '16px', alignItems: 'center', padding: '8px 0', borderBottom: last ? 'none' : '1px solid var(--color-border)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--color-text-secondary)' }}>
+        {icon}
+        <span>{label}</span>
+      </div>
+      <div style={{ color: 'var(--color-text)', textAlign: 'right' }}>{value}</div>
+    </div>
+  );
+}
+
+export default SettingsPage;
